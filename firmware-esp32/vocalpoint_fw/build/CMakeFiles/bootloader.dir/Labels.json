@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/Users/teganasprey/Desktop/capstone/vocalpoint/firmware-esp32/vocalpoint_fw/build/CMakeFiles/bootloader"
+		},
+		{
+			"file" : "/Users/teganasprey/Desktop/capstone/vocalpoint/firmware-esp32/vocalpoint_fw/build/CMakeFiles/bootloader.rule"
+		},
+		{
+			"file" : "/Users/teganasprey/Desktop/capstone/vocalpoint/firmware-esp32/vocalpoint_fw/build/CMakeFiles/bootloader-complete.rule"
+		},
+		{
+			"file" : "/Users/teganasprey/Desktop/capstone/vocalpoint/firmware-esp32/vocalpoint_fw/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule"
+		},
+		{
+			"file" : "/Users/teganasprey/Desktop/capstone/vocalpoint/firmware-esp32/vocalpoint_fw/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule"
+		},
+		{
+			"file" : "/Users/teganasprey/Desktop/capstone/vocalpoint/firmware-esp32/vocalpoint_fw/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule"
+		},
+		{
+			"file" : "/Users/teganasprey/Desktop/capstone/vocalpoint/firmware-esp32/vocalpoint_fw/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule"
+		},
+		{
+			"file" : "/Users/teganasprey/Desktop/capstone/vocalpoint/firmware-esp32/vocalpoint_fw/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule"
+		},
+		{
+			"file" : "/Users/teganasprey/Desktop/capstone/vocalpoint/firmware-esp32/vocalpoint_fw/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule"
+		},
+		{
+			"file" : "/Users/teganasprey/Desktop/capstone/vocalpoint/firmware-esp32/vocalpoint_fw/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"bootloader"
+		],
+		"name" : "bootloader"
+	}
+}
