@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+/Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/build/CMakeFiles/bootloader
+/Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/build/CMakeFiles/bootloader.rule
+/Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/build/CMakeFiles/bootloader-complete.rule
+/Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
+/Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+/Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+/Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+/Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+/Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+/Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule
