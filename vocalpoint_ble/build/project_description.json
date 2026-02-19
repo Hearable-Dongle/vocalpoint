@@ -1,7 +1,7 @@
 {
     "version":            "1.1",
     "project_name":       "bleprph",
-    "project_version":    "062824f-dirty",
+    "project_version":    "f85aeb9-dirty",
     "project_path":       "/Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble",
     "idf_path":           "/Users/teganasprey/Desktop/capstone/esp/esp-idf",
     "build_dir":          "/Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/build",

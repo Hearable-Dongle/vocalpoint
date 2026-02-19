@@ -30,7 +30,73 @@
 /*** Maximum number of characteristics with the notify flag ***/
 #define MAX_NOTIFY 5
 
+extern volatile uint8_t i2c_last_volume;
+extern volatile uint8_t i2c_last_battery;
+
 static uint8_t g_volume = 50;
+static uint8_t g_battery = 87;          // fake percent for now
+static uint16_t g_batt_chr_handle;      // handle used for notifications
+static uint16_t g_vol_chr_handle; 
+
+uint8_t battery_get(void)
+{
+    return g_battery;
+}
+
+void battery_set(uint8_t pct)
+{
+    if (pct > 100) pct = 100;
+    g_battery = pct;
+}
+
+uint8_t volume_get(void)
+{
+    return g_volume;
+}
+
+void volume_set(uint8_t v, uint16_t conn_handle)
+{
+    if (v > 100) v = 100;
+    g_volume = v;
+
+    // Notify phone if connected (and subscribed)
+    if (conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        struct os_mbuf *om = ble_hs_mbuf_from_flat(&g_volume, sizeof(g_volume));
+        if (om) {
+            ble_gatts_notify_custom(conn_handle, g_vol_chr_handle, om);
+        }
+    }
+
+    ESP_LOGI("VOLUME", "Volume set to %d", g_volume);
+}
+
+void battery_notify(uint16_t conn_handle)
+{
+    if (conn_handle == BLE_HS_CONN_HANDLE_NONE) return;
+    struct os_mbuf *om = ble_hs_mbuf_from_flat(&g_battery, sizeof(g_battery));
+    if (!om) return;
+    ble_gatts_notify_custom(conn_handle, g_batt_chr_handle, om);
+}
+
+
+static int
+battery_access_cb(uint16_t conn_handle, uint16_t attr_handle,
+                  struct ble_gatt_access_ctxt *ctxt, void *arg)
+{
+    (void)conn_handle;
+    (void)attr_handle;
+    (void)arg;
+
+    if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
+
+        uint8_t batt = i2c_last_battery;   // get latest value from Pi
+
+        int rc = os_mbuf_append(ctxt->om, &batt, sizeof(batt));
+        return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+
+    return BLE_ATT_ERR_UNLIKELY;
+}
 
 static int
 volume_access_cb(uint16_t conn_handle,
@@ -53,6 +119,9 @@ volume_access_cb(uint16_t conn_handle,
 
         if (v > 100) v = 100;
         g_volume = v;
+        i2c_last_volume = v;
+        ESP_LOGI("VOLUME", "Volume set to %d", g_volume);
+        return 0;
 
         ESP_LOGI("VOLUME", "Volume set to %d", g_volume);
         return 0;
@@ -92,6 +161,19 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
                 .uuid = BLE_UUID16_DECLARE(0xFF01),
                 .access_cb = volume_access_cb,
                 .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE,
+            },
+            { 0 }
+        },
+    },
+    {
+        .type = BLE_GATT_SVC_TYPE_PRIMARY,
+        .uuid = BLE_UUID16_DECLARE(0x180F),
+        .characteristics = (struct ble_gatt_chr_def[]) {
+            {
+                .uuid = BLE_UUID16_DECLARE(0x2A19),
+                .access_cb = battery_access_cb,
+                .val_handle = &g_batt_chr_handle,
+                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
             },
             { 0 }
         },

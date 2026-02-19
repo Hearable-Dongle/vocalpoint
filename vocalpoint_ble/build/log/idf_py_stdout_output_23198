@@ -1,0 +1,190 @@
+ize in the binary image header(2048k). Using the size in ESP-ROM:esp32c3-api1-20210207
+Build:Feb  7 2021
+rst:0x15 (USB_UART_CHIP_RESET),boot:0x8 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4004c0d6
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fcd5820,len:0x1738
+load:0x403cc710,len:0xb9c
+load:0x403ce710,len:0x2e4c
+entry 0x403cc71a
+[0;32mI (24) boot: ESP-IDF v5.3.1 2nd stage bootloader[0m
+[0;32mI (24) boot: compile time Jan 29 2026 19:35:42[0m
+[0;32mI (25) boot: chip revision: v0.4[0m
+[0;32mI (27) boot.esp32c3: SPI Speed      : 80MHz[0m
+[0;32mI (32) boot.esp32c3: SPI Mode       : DIO[0m
+[0;32mI (37) boot.esp32c3: SPI Flash Size : 2MB[0m
+[0;32mI (42) boot: Enabling RNG early entropy source...[0m
+[0;32mI (47) boot: Partition Table:[0m
+[0;32mI (51) boot: ## Label            Usage          Type ST Offset   Length[0m
+[0;32mI (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000[0m
+[0;32mI (65) boot:  1 phy_init         RF data          01 01 0000f000 00001000[0m
+[0;32mI (73) boot:  2 factory          factory app      00 00 00010000 00100000[0m
+[0;32mI (80) boot: End of partition table[0m
+[0;32mI (84) esp_image: segment 0: paddr=00010020 vaddr=3c070020 size=1a400h (107520) map[0m
+[0;32mI (110) esp_image: segment 1: paddr=0002a428 vaddr=3fc94000 size=028b0h ( 10416) load[0m
+[0;32mI (112) esp_image: segment 2: paddr=0002cce0 vaddr=40380000 size=03338h ( 13112) load[0m
+[0;32mI (118) esp_image: segment 3: paddr=00030020 vaddr=42000020 size=67fe4h (425956) map[0m
+[0;32mI (190) esp_image: segment 4: paddr=0009800c vaddr=40383338 size=10ac0h ( 68288) load[0m
+[0;32mI (210) boot: Loaded app from partition at offset 0x10000[0m
+[0;32mI (210) boot: Disabling RNG early entropy source...[0m
+[0;32mI (222) cpu_start: Unicore app[0m
+[0;32mI (230) cpu_start: Pro cpu start user code[0m
+[0;32mI (230) cpu_start: cpu freq: 160000000 Hz[0m
+[0;32mI (230) app_init: Application information:[0m
+[0;32mI (233) app_init: Project name:     bleprph[0m
+[0;32mI (238) app_init: App version:      f85aeb9-dirty[0m
+[0;32mI (243) app_init: Compile time:     Feb 19 2026 11:49:28[0m
+[0;32mI (249) app_init: ELF file SHA256:  1426f82ca...[0m
+[0;32mI (254) app_init: ESP-IDF:          v5.3.1[0m
+[0;32mI (259) efuse_init: Min chip rev:     v0.3[0m
+[0;32mI (264) efuse_init: Max chip rev:     v1.99 [0m
+[0;32mI (269) efuse_init: Chip rev:         v0.4[0m
+[0;32mI (274) heap_init: Initializing. RAM available for dynamic allocation:[0m
+[0;32mI (281) heap_init: At 3FC99500 len 00026B00 (154 KiB): RAM[0m
+[0;32mI (287) heap_init: At 3FCC0000 len 0001C710 (113 KiB): Retention RAM[0m
+[0;32mI (294) heap_init: At 3FCDC710 len 00002950 (10 KiB): Retention RAM[0m
+[0;32mI (301) heap_init: At 50000200 len 00001DE8 (7 KiB): RTCRAM[0m
+[0;32mI (308) spi_flash: detected chip: generic[0m
+[0;32mI (312) spi_flash: flash io: dio[0m
+[0;33mW (316) spi_flash: Detected size(4096k) larger than the size in the binary image header(2048k). Using the size in the binary image header.[0m
+[0;33mW (329) i2c: This driver is an old driver, please migrate your application code to adapt `driver/i2c_master.h`[0m
+[0;32mI (340) sleep: Configure to isolate all GPIO pins in sleep state[0m
+[0;32mI (347) sleep: Enable automatic switching of GPIO sleep configuration[0m
+[0;32mI (354) coexist: coex firmware version: 4482466[0m
+[0;32mI (359) coexist: coexist rom version 9387209[0m
+[0;32mI (364) main_task: Started on CPU0[0m
+[0;32mI (364) main_task: Calling app_main()[0m
+[0;32mI (374) BLE_INIT: BT controller compile version [aa16a46][0m
+[0;32mI (374) BLE_INIT: Bluetooth MAC: 58:8c:81:a0:11:e2[0m
+[0;32mI (384) phy_init: phy_version 1180,01f2a49,Jun  4 2024,16:34:25[0m
+[0;32mI (424) NimBLE_BLE_PRPH: BLE Host Task Started[0m
+[0;32mI (424) NimBLE: GAP procedure initiated: stop advertising.
+[0m
+[0;32mI (424) NimBLE: Device Address: [0m
+[0;32mI (424) NimBLE: 58:8c:81:a0:11:e2[0m
+[0;32mI (434) NimBLE: 
+[0m
+[0;32mI (434) NimBLE: GAP procedure initiated: advertise; [0m
+[0;32mI (434) NimBLE: disc_mode=2[0m
+[0;32mI (444) NimBLE:  adv_channel_map=0 own_addr_type=0 adv_filter_policy=0 adv_itvl_min=0 adv_itvl_max=0[0m
+[0;32mI (454) NimBLE: 
+[0m
+[0;32mI (454) uart: queue free spaces: 8[0m
+[0;32mI (464) main_task: Returned from app_main()[0m
+[0;32mI (38034) NimBLE: connection established; status=0 [0m
+[0;32mI (38034) NimBLE: handle=1 our_ota_addr_type=0 our_ota_addr=[0m
+[0;32mI (38034) NimBLE: 58:8c:81:a0:11:e2[0m
+[0;32mI (38044) NimBLE:  our_id_addr_type=0 our_id_addr=[0m
+[0;32mI (38044) NimBLE: 58:8c:81:a0:11:e2[0m
+[0;32mI (38054) NimBLE:  peer_ota_addr_type=0 peer_ota_addr=[0m
+[0;32mI (38054) NimBLE: 8c:7a:aa:ee:bd:46[0m
+[0;32mI (38064) NimBLE:  peer_id_addr_type=0 peer_id_addr=[0m
+[0;32mI (38064) NimBLE: 8c:7a:aa:ee:bd:46[0m
+[0;32mI (38074) NimBLE:  conn_itvl=12 conn_latency=0 supervision_timeout=36 encrypted=0 authenticated=0 bonded=0
+[0m
+[0;32mI (38084) NimBLE: 
+[0m
+[0;32mI (38324) NimBLE: mtu update event; conn_handle=1 cid=4 mtu=256
+[0m
+[0;32mI (38444) NimBLE: subscribe event; conn_handle=1 attr_handle=8 reason=1 prevn=0 curn=0 previ=0 curi=1
+[0m
+[0;32mI (56114) VOLUME: Volume set to 20[0m
+[0;32mI (57084) VOLUME: Volume set to 20[0m
+[0;32mI (189474) VOLUME: Volume set to 22[0m
+[0;32mI (189824) VOLUME: Volume set to 44[0m
+[0;32mI (191354) VOLUME: Volume set to 45[0m
+[0;32mI (191574) VOLUME: Volume set to 53[0m
+[0;32mI (192384) VOLUME: Volume set to 32[0m
+[0;32mI (193164) VOLUME: Volume set to 17[0m
+[0;32mI (193974) VOLUME: Volume set to 29[0m
+[0;32mI (194724) VOLUME: Volume set to 42[0m
+[0;32mI (199664) VOLUME: Volume set to 43[0m
+[0;32mI (199954) VOLUME: Volume set to 49[0m
+[0;32mI (200824) VOLUME: Volume set to 45[0m
+[0;32mI (201484) VOLUME: Volume set to 39[0m
+[0;32mI (202444) VOLUME: Volume set to 39[0m
+[0;32mI (203514) VOLUME: Volume set to 39[0m
+[0;32mI (204324) VOLUME: Volume set to 39[0m
+[0;32mI (207534) VOLUME: Volume set to 39[0m
+[0;32mI (208054) VOLUME: Volume set to 39[0m
+[0;32mI (246504) NimBLE: subscribe event; conn_handle=1 attr_handle=8 reason=2 prevn=0 curn=0 previ=1 curi=0
+[0m
+[0;32mI (246504) NimBLE: disconnect; reason=531 [0m
+[0;32mI (246504) NimBLE: handle=1 our_ota_addr_type=0 our_ota_addr=[0m
+[0;32mI (246514) NimBLE: 58:8c:81:a0:11:e2[0m
+[0;32mI (246514) NimBLE:  our_id_addr_type=0 our_id_addr=[0m
+[0;32mI (246524) NimBLE: 58:8c:81:a0:11:e2[0m
+[0;32mI (246524) NimBLE:  peer_ota_addr_type=0 peer_ota_addr=[0m
+[0;32mI (246534) NimBLE: 8c:7a:aa:ee:bd:46[0m
+[0;32mI (246534) NimBLE:  peer_id_addr_type=0 peer_id_addr=[0m
+[0;32mI (246544) NimBLE: 8c:7a:aa:ee:bd:46[0m
+[0;32mI (246544) NimBLE:  conn_itvl=12 conn_latency=0 supervision_timeout=36 encrypted=0 authenticated=0 bonded=0
+[0m
+[0;32mI (246564) NimBLE: 
+[0m
+[0;32mI (246564) NimBLE: GAP procedure initiated: advertise; [0m
+[0;32mI (246564) NimBLE: disc_mode=2[0m
+[0;32mI (246574) NimBLE:  adv_channel_map=0 own_addr_type=0 adv_filter_policy=0 adv_itvl_min=0 adv_itvl_max=0[0m
+[0;32mI (246584) NimBLE: 
+[0m
+[0;32mI (261794) NimBLE: connection established; status=0 [0m
+[0;32mI (261794) NimBLE: handle=1 our_ota_addr_type=0 our_ota_addr=[0m
+[0;32mI (261794) NimBLE: 58:8c:81:a0:11:e2[0m
+[0;32mI (261794) NimBLE:  our_id_addr_type=0 our_id_addr=[0m
+[0;32mI (261804) NimBLE: 58:8c:81:a0:11:e2[0m
+[0;32mI (261804) NimBLE:  peer_ota_addr_type=0 peer_ota_addr=[0m
+[0;32mI (261814) NimBLE: 8c:7a:aa:ee:bd:46[0m
+[0;32mI (261814) NimBLE:  peer_id_addr_type=0 peer_id_addr=[0m
+[0;32mI (261824) NimBLE: 8c:7a:aa:ee:bd:46[0m
+[0;32mI (261824) NimBLE:  conn_itvl=12 conn_latency=0 supervision_timeout=36 encrypted=0 authenticated=0 bonded=0
+[0m
+[0;32mI (261834) NimBLE: 
+[0m
+[0;32mI (262054) NimBLE: mtu update event; conn_handle=1 cid=4 mtu=256
+[0m
+[0;32mI (262194) NimBLE: subscribe event; conn_handle=1 attr_handle=8 reason=1 prevn=0 curn=0 previ=0 curi=1
+[0m
+[0;32mI (273994) VOLUME: Volume set to 40[0m
+[0;32mI (274464) VOLUME: Volume set to 44[0m
+[0;32mI (276124) VOLUME: Volume set to 49[0m
+[0;32mI (277624) VOLUME: Volume set to 60[0m
+[0;32mI (279724) VOLUME: Volume set to 44[0m
+[0;32mI (281014) VOLUME: Volume set to 29[0m
+[0;32mI (287754) NimBLE: subscribe event; conn_handle=1 attr_handle=8 reason=2 prevn=0 curn=0 previ=1 curi=0
+[0m
+[0;32mI (287754) NimBLE: disconnect; reason=531 [0m
+[0;32mI (287754) NimBLE: handle=1 our_ota_addr_type=0 our_ota_addr=[0m
+[0;32mI (287764) NimBLE: 58:8c:81:a0:11:e2[0m
+[0;32mI (287764) NimBLE:  our_id_addr_type=0 our_id_addr=[0m
+[0;32mI (287774) NimBLE: 58:8c:81:a0:11:e2[0m
+[0;32mI (287774) NimBLE:  peer_ota_addr_type=0 peer_ota_addr=[0m
+[0;32mI (287784) NimBLE: 8c:7a:aa:ee:bd:46[0m
+[0;32mI (287784) NimBLE:  peer_id_addr_type=0 peer_id_addr=[0m
+[0;32mI (287794) NimBLE: 8c:7a:aa:ee:bd:46[0m
+[0;32mI (287794) NimBLE:  conn_itvl=12 conn_latency=0 supervision_timeout=36 encrypted=0 authenticated=0 bonded=0
+[0m
+[0;32mI (287804) NimBLE: 
+[0m
+[0;32mI (287814) NimBLE: GAP procedure initiated: advertise; [0m
+[0;32mI (287814) NimBLE: disc_mode=2[0m
+[0;32mI (287824) NimBLE:  adv_channel_map=0 own_addr_type=0 adv_filter_policy=0 adv_itvl_min=0 adv_itvl_max=0[0m
+[0;32mI (287834) NimBLE: 
+[0m
+[0;32mI (316954) NimBLE: connection established; status=0 [0m
+[0;32mI (316954) NimBLE: handle=1 our_ota_addr_type=0 our_ota_addr=[0m
+[0;32mI (316954) NimBLE: 58:8c:81:a0:11:e2[0m
+[0;32mI (316964) NimBLE:  our_id_addr_type=0 our_id_addr=[0m
+[0;32mI (316964) NimBLE: 58:8c:81:a0:11:e2[0m
+[0;32mI (316964) NimBLE:  peer_ota_addr_type=0 peer_ota_addr=[0m
+[0;32mI (316974) NimBLE: 8c:7a:aa:ee:bd:46[0m
+[0;32mI (316984) NimBLE:  peer_id_addr_type=0 peer_id_addr=[0m
+[0;32mI (316984) NimBLE: 8c:7a:aa:ee:bd:46[0m
+[0;32mI (316984) NimBLE:  conn_itvl=12 conn_latency=0 supervision_timeout=36 encrypted=0 authenticated=0 bonded=0
+[0m
+[0;32mI (317004) NimBLE: 
+[0m
+[0;32mI (317224) NimBLE: mtu update event; conn_handle=1 cid=4 mtu=256
+[0m
+[0;32mI (317344) NimBLE: subscribe event; conn_handle=1 attr_handle=8 reason=1 prevn=0 curn=0 previ=0 curi=1
+[0m

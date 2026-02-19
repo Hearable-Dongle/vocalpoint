@@ -1,0 +1,80 @@
+[1/11] Performing build step for 'bootloader'
+[1/1] cd /Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/build/bootloader/esp-idf/esptool_py && /Users/teganasprey/.espressif/python_env/idf5.3_py3.13_env/bin/python /Users/teganasprey/Desktop/capstone/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 /Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/build/bootloader/bootloader.bin
+Bootloader binary size 0x5180 bytes. 0x2e80 bytes (36%) free.
+[2/11] No install step for 'bootloader'
+[3/11] Completed 'bootloader'
+[4/11] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/gatt_svr.c.obj
+/Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/main/gatt_svr.c:216:1: warning: 'gatt_svc_access' defined but not used [-Wunused-function]
+  216 | gatt_svc_access(uint16_t conn_handle, uint16_t attr_handle,
+      | ^~~~~~~~~~~~~~~
+[5/11] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/main.c.obj
+/Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/main/main.c:561:13: warning: 'battery_task' defined but not used [-Wunused-function]
+  561 | static void battery_task(void *arg)
+      |             ^~~~~~~~~~~~
+[6/11] Linking C static library esp-idf/main/libmain.a
+[7/11] Generating ld/sections.ld
+[8/11] Linking CXX executable bleprph.elf
+[9/11] Generating binary image from built executable
+esptool.py v4.10.0
+Creating esp32c3 image...
+Merged 1 ELF section
+Successfully created esp32c3 image.
+Generated /Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/build/bleprph.bin
+[10/11] cd /Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/build/esp-idf/esptool_py && /Users/teganasprey/.espressif/python_env/idf5.3_py3.13_env/bin/python /Users/teganasprey/Desktop/capstone/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app /Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/build/partition_table/partition-table.bin /Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/build/bleprph.bin
+bleprph.bin binary size 0x98d20 bytes. Smallest app partition is 0x100000 bytes. 0x672e0 bytes (40%) free.
+[10/11] cd /Users/teganasprey/Desktop/capstone/esp/esp-idf/components/esptool_py && /opt/homebrew/bin/cmake -D IDF_PATH=/Users/teganasprey/Desktop/capstone/esp/esp-idf -D "SERIAL_TOOL=/Users/teganasprey/.espressif/python_env/idf5.3_py3.13_env/bin/python;;/Users/teganasprey/Desktop/capstone/esp/esp-idf/components/esptool_py/esptool/esptool.py;--chip;esp32c3" -D "SERIAL_TOOL_ARGS=--before=default_reset;--after=hard_reset;write_flash;@flash_args" -D WORKING_DIRECTORY=/Users/teganasprey/Desktop/capstone/vocalpoint/vocalpoint_ble/build -P /Users/teganasprey/Desktop/capstone/esp/esp-idf/components/esptool_py/run_serial_tool.cmake
+esptool.py --chip esp32c3 -p /dev/tty.usbmodem101 -b 460800 --before=default_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 2MB 0x0 bootloader/bootloader.bin 0x10000 bleprph.bin 0x8000 partition_table/partition-table.bin
+esptool.py v4.10.0
+Serial port /dev/tty.usbmodem101
+Connecting...
+Chip is ESP32-C3 (QFN32) (revision v0.4)
+Features: WiFi, BLE, Embedded Flash 4MB (XMC)
+Crystal is 40MHz
+USB mode: USB-Serial/JTAG
+MAC: 58:8c:81:a0:11:e0
+Uploading stub...
+Running stub...
+Stub running...
+Changing baud rate to 460800
+Changed.
+Configuring flash size...
+Flash will be erased from 0x00000000 to 0x00005fff...
+Flash will be erased from 0x00010000 to 0x000a8fff...
+Flash will be erased from 0x00008000 to 0x00008fff...
+SHA digest in image updated
+Compressed 20864 bytes to 12759...
+Writing at 0x00000000... (100 %)
+Wrote 20864 bytes (12759 compressed) at 0x00000000 in 0.3 seconds (effective 541.9 kbit/s)...
+Hash of data verified.
+Compressed 625952 bytes to 354704...
+Writing at 0x00010000... (4 %)
+Writing at 0x0001ca69... (9 %)
+Writing at 0x00023468... (13 %)
+Writing at 0x000284f1... (18 %)
+Writing at 0x0002ff8a... (22 %)
+Writing at 0x00036860... (27 %)
+Writing at 0x0003e273... (31 %)
+Writing at 0x00045a8e... (36 %)
+Writing at 0x0004ca80... (40 %)
+Writing at 0x00053c08... (45 %)
+Writing at 0x0005aca5... (50 %)
+Writing at 0x00061ea0... (54 %)
+Writing at 0x0006951b... (59 %)
+Writing at 0x0006ff96... (63 %)
+Writing at 0x00076490... (68 %)
+Writing at 0x0007cf36... (72 %)
+Writing at 0x00082da0... (77 %)
+Writing at 0x000896fa... (81 %)
+Writing at 0x00090366... (86 %)
+Writing at 0x00096eea... (90 %)
+Writing at 0x0009d0d6... (95 %)
+Writing at 0x000a3f25... (100 %)
+Wrote 625952 bytes (354704 compressed) at 0x00010000 in 4.6 seconds (effective 1080.6 kbit/s)...
+Hash of data verified.
+Compressed 3072 bytes to 103...
+Writing at 0x00008000... (100 %)
+Wrote 3072 bytes (103 compressed) at 0x00008000 in 0.1 seconds (effective 447.5 kbit/s)...
+Hash of data verified.
+
+Leaving...
+Hard resetting via RTS pin...

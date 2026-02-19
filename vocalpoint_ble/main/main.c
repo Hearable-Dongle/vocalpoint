@@ -27,6 +27,18 @@
 #include "console/console.h"
 #include "services/gap/ble_svc_gap.h"
 #include "bleprph.h"
+#include "host/ble_gap.h" 
+#include "driver/i2c.h"
+
+#define I2C_PORT        I2C_NUM_0
+#define I2C_SLAVE_ADDR  0x42
+#define I2C_SDA_PIN     4
+#define I2C_SCL_PIN     5
+
+volatile uint8_t i2c_last_volume = 50;   // what app wrote (for Pi to read)
+volatile uint8_t i2c_last_battery = 87;  // what Pi wrote (for app to see)
+
+uint16_t g_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 
 #if CONFIG_EXAMPLE_EXTENDED_ADV
 static uint8_t ext_adv_pattern_1[] = {
@@ -46,6 +58,44 @@ static uint8_t own_addr_type;
 #endif
 
 void ble_store_config_init(void);
+
+static void i2c_slave_init(void)
+{
+    i2c_config_t conf = {
+        .mode = I2C_MODE_SLAVE,
+        .sda_io_num = I2C_SDA_PIN,
+        .scl_io_num = I2C_SCL_PIN,
+        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+        .scl_pullup_en = GPIO_PULLUP_ENABLE,
+        .slave = {
+            .addr_10bit_en = 0,
+            .slave_addr = I2C_SLAVE_ADDR,
+        },
+    };
+
+    ESP_ERROR_CHECK(i2c_param_config(I2C_PORT, &conf));
+    ESP_ERROR_CHECK(i2c_driver_install(I2C_PORT, conf.mode, 256, 256, 0));
+}
+
+static void i2c_bridge_task(void *arg)
+{
+    uint8_t rx;
+
+    while (1) {
+        // // If Pi writes 1 byte -> treat it as BATTERY %
+        // int len = i2c_slave_read_buffer(I2C_PORT, &rx, 1, 10 / portTICK_PERIOD_MS);
+        // if (len == 1) {
+        //     if (rx > 100) rx = 100;
+        //     i2c_last_battery = rx;
+        // }
+
+        // If Pi reads -> return the most recent VOLUME from app
+        uint8_t tx = i2c_last_volume;
+        i2c_slave_write_buffer(I2C_PORT, &tx, 1, 10 / portTICK_PERIOD_MS);
+
+        vTaskDelay(pdMS_TO_TICKS(0));
+    }
+}
 
 /**
  * Logs information about a connection to the console.
@@ -241,6 +291,7 @@ bleprph_gap_event(struct ble_gap_event *event, void *arg)
                     event->connect.status == 0 ? "established" : "failed",
                     event->connect.status);
         if (event->connect.status == 0) {
+            g_conn_handle = event->connect.conn_handle;
             rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
             assert(rc == 0);
             bleprph_print_conn_desc(&desc);
@@ -262,6 +313,7 @@ bleprph_gap_event(struct ble_gap_event *event, void *arg)
         return 0;
 
     case BLE_GAP_EVENT_DISCONNECT:
+        g_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         MODLOG_DFLT(INFO, "disconnect; reason=%d ", event->disconnect.reason);
         bleprph_print_conn_desc(&event->disconnect.conn);
         MODLOG_DFLT(INFO, "\n");
@@ -502,6 +554,28 @@ void bleprph_host_task(void *param)
     nimble_port_freertos_deinit();
 }
 
+// battery simulation task
+extern void battery_set(uint8_t pct);
+extern void battery_notify(uint16_t conn_handle);
+
+static void battery_task(void *arg)
+{
+    uint8_t pct = 100;
+
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(5000)); // every 5s (demo)
+
+        if (pct > 0) pct--;
+        else pct = 100;
+
+        battery_set(pct);
+
+        if (g_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+            battery_notify(g_conn_handle);
+        }
+    }
+}
+
 void
 app_main(void)
 {
@@ -566,4 +640,10 @@ app_main(void)
     if (rc != ESP_OK) {
         ESP_LOGE(tag, "scli_init() failed");
     }
+
+    // Create battery simulation task
+    // xTaskCreate(battery_task, "battery_task", 2048, NULL, 5, NULL);
+
+    i2c_slave_init();
+    xTaskCreate(i2c_bridge_task, "i2c_bridge", 2048, NULL, 5, NULL);
 }
