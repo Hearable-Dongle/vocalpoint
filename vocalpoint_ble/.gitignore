@@ -1,0 +1,3 @@
+build/
+dependencies.lock
+.DS_Store

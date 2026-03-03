@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -187,6 +186,7 @@ class _BluetoothSetupPageState extends State<BluetoothSetupPage> {
 
     // Scan callback.
     UniversalBle.onScanResult = (BleDevice device) {
+      if (!mounted) return;
       final idx = _found.indexWhere((d) => d.deviceId == device.deviceId);
       if (idx == -1) {
         setState(() => _found.add(device));
@@ -195,7 +195,7 @@ class _BluetoothSetupPageState extends State<BluetoothSetupPage> {
         final existing = _found[idx];
         final existingName = existing.name;
         final newName = device.name;
-        if ((existingName == null || existingName!.isEmpty) &&
+        if ((existingName == null || existingName.isEmpty) &&
             (newName != null && newName.isNotEmpty)) {
           setState(() => _found[idx] = device);
         }
@@ -209,6 +209,10 @@ class _BluetoothSetupPageState extends State<BluetoothSetupPage> {
   @override
   void dispose() {
     _scanTimeoutSub?.cancel();
+    if (_scanning) {
+      UniversalBle.stopScan();
+    }
+    UniversalBle.onScanResult = null;
     super.dispose();
   }
 
@@ -560,6 +564,46 @@ class VolumeControlPage extends StatefulWidget {
 
 class _VolumeControlPageState extends State<VolumeControlPage> {
   Timer? _writeDebounce;
+  late final TextEditingController _serviceUuidController;
+  late final TextEditingController _charUuidController;
+
+  late final VoidCallback _serviceUuidListener;
+  late final VoidCallback _charUuidListener;
+
+  @override
+  void initState() {
+    super.initState();
+    _serviceUuidController = TextEditingController(
+      text: AppState.volumeServiceUuid.value,
+    );
+    _charUuidController = TextEditingController(
+      text: AppState.volumeCharUuid.value,
+    );
+
+    _serviceUuidListener = () {
+      final value = AppState.volumeServiceUuid.value;
+      if (_serviceUuidController.text != value) {
+        _serviceUuidController.value = _serviceUuidController.value.copyWith(
+          text: value,
+          selection: TextSelection.collapsed(offset: value.length),
+          composing: TextRange.empty,
+        );
+      }
+    };
+    _charUuidListener = () {
+      final value = AppState.volumeCharUuid.value;
+      if (_charUuidController.text != value) {
+        _charUuidController.value = _charUuidController.value.copyWith(
+          text: value,
+          selection: TextSelection.collapsed(offset: value.length),
+          composing: TextRange.empty,
+        );
+      }
+    };
+
+    AppState.volumeServiceUuid.addListener(_serviceUuidListener);
+    AppState.volumeCharUuid.addListener(_charUuidListener);
+  }
 
   void _snack(String msg) {
     if (!mounted) return;
@@ -604,6 +648,10 @@ class _VolumeControlPageState extends State<VolumeControlPage> {
   @override
   void dispose() {
     _writeDebounce?.cancel();
+    AppState.volumeServiceUuid.removeListener(_serviceUuidListener);
+    AppState.volumeCharUuid.removeListener(_charUuidListener);
+    _serviceUuidController.dispose();
+    _charUuidController.dispose();
     super.dispose();
   }
 
@@ -710,42 +758,24 @@ class _VolumeControlPageState extends State<VolumeControlPage> {
             ),
             const SizedBox(height: 8),
 
-            ValueListenableBuilder<String>(
-              valueListenable: AppState.volumeServiceUuid,
-              builder: (_, s, __) {
-                final controller = TextEditingController(text: s)
-                  ..selection = TextSelection.fromPosition(
-                    TextPosition(offset: s.length),
-                  );
-                return TextField(
-                  decoration: const InputDecoration(
-                    labelText: "Service UUID",
-                    border: OutlineInputBorder(),
-                  ),
-                  style: uuidStyle,
-                  controller: controller,
-                  onChanged: (v) => AppState.volumeServiceUuid.value = v,
-                );
-              },
+            TextField(
+              decoration: const InputDecoration(
+                labelText: "Service UUID",
+                border: OutlineInputBorder(),
+              ),
+              style: uuidStyle,
+              controller: _serviceUuidController,
+              onChanged: (v) => AppState.volumeServiceUuid.value = v,
             ),
             const SizedBox(height: 10),
-            ValueListenableBuilder<String>(
-              valueListenable: AppState.volumeCharUuid,
-              builder: (_, s, __) {
-                final controller = TextEditingController(text: s)
-                  ..selection = TextSelection.fromPosition(
-                    TextPosition(offset: s.length),
-                  );
-                return TextField(
-                  decoration: const InputDecoration(
-                    labelText: "Characteristic UUID",
-                    border: OutlineInputBorder(),
-                  ),
-                  style: uuidStyle,
-                  controller: controller,
-                  onChanged: (v) => AppState.volumeCharUuid.value = v,
-                );
-              },
+            TextField(
+              decoration: const InputDecoration(
+                labelText: "Characteristic UUID",
+                border: OutlineInputBorder(),
+              ),
+              style: uuidStyle,
+              controller: _charUuidController,
+              onChanged: (v) => AppState.volumeCharUuid.value = v,
             ),
 
             const Spacer(),

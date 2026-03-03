@@ -27,7 +27,7 @@
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>This app uses Bluetooth to communicate with peripherals.</string>
 	<key>NSBluetoothWhileInUseUsageDescription</key>
-	<string></string>
+	<string>This app uses Bluetooth while running to discover and control VocalPoint.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>

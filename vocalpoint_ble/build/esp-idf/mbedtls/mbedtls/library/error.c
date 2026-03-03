@@ -1,1 +1,0 @@
-/Users/teganasprey/Desktop/capstone/esp/esp-idf/components/mbedtls/mbedtls/library/error.c
