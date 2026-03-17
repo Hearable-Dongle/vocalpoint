@@ -43,7 +43,6 @@ class AppState {
       ValueNotifier<String?>(null);
 
   static final ValueNotifier<double> volume = ValueNotifier<double>(50);
-  static final ValueNotifier<double> battery = ValueNotifier<double>(75);
   static final ValueNotifier<bool> isMuted = ValueNotifier<bool>(false);
   static final ValueNotifier<Color> highlightColor = ValueNotifier<Color>(
     AppColors.gold,
@@ -103,7 +102,9 @@ class RememberedDevice {
 
 enum SetupPanel { vocalPoint, output }
 
-enum ProfileMenuAction { profile, deviceSettings, about }
+enum ControlPanel { volume, mix }
+
+enum ProfileMenuAction { about, systemMetadata, deviceDiagnostics }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -205,16 +206,14 @@ class _VocalPointShellState extends State<VocalPointShell> {
   Timer? _dashboardTimer;
   Timer? _scanTimeoutTimer;
   Timer? _volumeWriteDebounce;
-  Timer? _batteryWriteDebounce;
 
   bool _showSplashOverlay = true;
   bool _expandSplashLogo = false;
   bool _dashboardUnlocked = false;
-  bool _showDashboard = false;
   bool _isScanning = false;
-  bool _showDiagnosticsDetails = false;
 
   SetupPanel? _expandedPanel;
+  ControlPanel? _expandedControlPanel;
   SetupPanel? _activeScanTarget;
 
   String? _pendingVocalPointId;
@@ -267,7 +266,6 @@ class _VocalPointShellState extends State<VocalPointShell> {
     _dashboardTimer?.cancel();
     _scanTimeoutTimer?.cancel();
     _volumeWriteDebounce?.cancel();
-    _batteryWriteDebounce?.cancel();
 
     if (_isScanning) {
       UniversalBle.stopScan();
@@ -347,19 +345,18 @@ class _VocalPointShellState extends State<VocalPointShell> {
   void _handleSetupStateChanged() {
     final ready = _hasConnectedVocalPoint && _hasSelectedOutputDevice;
     if (ready && !_dashboardUnlocked) {
-      setState(() => _dashboardUnlocked = true);
-      _dashboardTimer?.cancel();
-      _dashboardTimer = Timer(const Duration(milliseconds: 700), () {
-        if (!mounted) return;
-        setState(() {
-          _showDashboard = true;
-          _expandedPanel = null;
-        });
+      setState(() {
+        _dashboardUnlocked = true;
+        _expandedPanel = null;
+        _expandedControlPanel = null;
       });
     }
 
-    if (!ready && !_dashboardUnlocked && mounted) {
-      setState(() => _showDashboard = false);
+    if (!ready && _dashboardUnlocked && mounted) {
+      setState(() {
+        _dashboardUnlocked = false;
+        _expandedControlPanel = null;
+      });
     }
   }
 
@@ -369,9 +366,19 @@ class _VocalPointShellState extends State<VocalPointShell> {
     }
     if (!mounted) return;
     setState(() {
-      _dashboardUnlocked = true;
-      _showDashboard = true;
-      _expandedPanel = null;
+      _dashboardUnlocked = !_dashboardUnlocked;
+      if (_dashboardUnlocked) {
+        _expandedPanel = null;
+        _expandedControlPanel = null;
+      } else {
+        _expandedControlPanel = null;
+      }
+    });
+  }
+
+  void _toggleControlPanel(ControlPanel panel) {
+    setState(() {
+      _expandedControlPanel = _expandedControlPanel == panel ? null : panel;
     });
   }
 
@@ -385,6 +392,14 @@ class _VocalPointShellState extends State<VocalPointShell> {
 
   bool _isSelectableOutput(BleDevice device) {
     return _isNamedDevice(device) && !_isVocalPointDevice(device);
+  }
+
+  String _deviceLabel(BleDevice device, {required String fallback}) {
+    final name = device.name?.trim() ?? '';
+    if (name.isEmpty || name == 'Unnamed' || name == device.deviceId) {
+      return fallback;
+    }
+    return name;
   }
 
   void _upsertScanResult(List<BleDevice> list, BleDevice device) {
@@ -419,9 +434,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
   }
 
   void _rememberDevice(BleDevice device) {
-    final name = device.name?.trim().isNotEmpty == true
-        ? device.name!.trim()
-        : device.deviceId;
+    final name = _deviceLabel(device, fallback: 'Saved device');
     final current = List<RememberedDevice>.from(
       AppState.rememberedDevices.value,
     );
@@ -518,9 +531,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
   }
 
   Future<void> _connectToVocalPoint(BleDevice device) async {
-    final name = device.name?.trim().isNotEmpty == true
-        ? device.name!.trim()
-        : 'Unnamed device';
+    final name = _deviceLabel(device, fallback: 'VocalPoint device');
 
     setState(() => _pendingVocalPointId = device.deviceId);
 
@@ -550,7 +561,6 @@ class _VocalPointShellState extends State<VocalPointShell> {
       _rememberDevice(device);
 
       await _writeVolumeToDevice();
-      await _writeBatteryToDevice();
       await _syncSelectedOutputToDevice(showSuccess: false);
       await _sendParam2(AppState.param2.value, showSuccess: false);
 
@@ -584,9 +594,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
   }
 
   Future<void> _selectOutputDevice(BleDevice device) async {
-    final name = device.name?.trim().isNotEmpty == true
-        ? device.name!.trim()
-        : device.deviceId;
+    final name = _deviceLabel(device, fallback: 'Output device');
 
     setState(() => _pendingOutputId = device.deviceId);
 
@@ -682,15 +690,6 @@ class _VocalPointShellState extends State<VocalPointShell> {
     );
   }
 
-  Future<void> _writeBatteryToDevice({bool showSuccess = false}) async {
-    final battery = AppState.battery.value.round().clamp(0, 100);
-    await _writeMetadataToken(
-      'BATTERY=$battery',
-      showSuccess: showSuccess,
-      successMessage: 'Sent BATTERY=$battery',
-    );
-  }
-
   Future<void> _syncSelectedOutputToDevice({bool showSuccess = true}) async {
     final address = AppState.bleAddress.value.trim();
     final outputName = AppState.audioOutputDeviceName.value?.trim() ?? '';
@@ -729,15 +728,6 @@ class _VocalPointShellState extends State<VocalPointShell> {
     _volumeWriteDebounce = Timer(
       const Duration(milliseconds: 140),
       () => _writeVolumeToDevice(),
-    );
-  }
-
-  void _onBatteryChanged(double value) {
-    AppState.battery.value = value;
-    _batteryWriteDebounce?.cancel();
-    _batteryWriteDebounce = Timer(
-      const Duration(milliseconds: 160),
-      () => _writeBatteryToDevice(),
     );
   }
 
@@ -794,23 +784,125 @@ class _VocalPointShellState extends State<VocalPointShell> {
 
   void _handleProfileMenu(ProfileMenuAction action) {
     switch (action) {
-      case ProfileMenuAction.profile:
-        _showToast('Profile menu is a placeholder for now');
-      case ProfileMenuAction.deviceSettings:
-        setState(() => _showDiagnosticsDetails = true);
-        _showToast('Device settings are available in diagnostics');
       case ProfileMenuAction.about:
-        showAboutDialog(
-          context: context,
-          applicationName: 'VocalPoint',
-          applicationVersion: '1.0.0',
-          children: const [
-            Text(
-              'Glassy BLE controller for VocalPoint and external output devices.',
-            ),
-          ],
-        );
+        _showAboutDialog();
+      case ProfileMenuAction.systemMetadata:
+        _showSystemMetadataDialog();
+      case ProfileMenuAction.deviceDiagnostics:
+        _showDeviceDiagnosticsDialog();
     }
+  }
+
+  void _showAboutDialog() {
+    _showOverlayDialog(
+      title: 'About',
+      childBuilder: (dialogContext) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: AspectRatio(
+              aspectRatio: 4 / 3,
+              child: Image.asset('assets/Good_Pic_Two.jpg', fit: BoxFit.cover),
+            ),
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            'VocalPoint',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          const Text('Version 1.0.0', style: TextStyle(color: AppColors.muted)),
+          const SizedBox(height: 16),
+          const Text(
+            'A portable device that connects to hearing aids (and headphones), denoising conversations in realtime.',
+            style: TextStyle(color: AppColors.white, height: 1.5),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSystemMetadataDialog() {
+    _showOverlayDialog(
+      title: 'System and Metadata',
+      childBuilder: (dialogContext) => _buildSystemMetadataContent(),
+    );
+  }
+
+  void _showDeviceDiagnosticsDialog() {
+    _showOverlayDialog(
+      title: 'Device Diagnostics',
+      childBuilder: (dialogContext) => _buildDeviceDiagnosticsContent(),
+    );
+  }
+
+  void _showOverlayDialog({
+    required String title,
+    required WidgetBuilder childBuilder,
+  }) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 24,
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.panelSoft,
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    blurRadius: 30,
+                    offset: const Offset(0, 18),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 18, 12, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                          icon: const Icon(Icons.close),
+                          tooltip: 'Close',
+                        ),
+                      ],
+                    ),
+                  ),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(22, 8, 22, 22),
+                      child: childBuilder(dialogContext),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -834,28 +926,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
               ),
             ),
           ),
-          SafeArea(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 650),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) {
-                return FadeTransition(
-                  opacity: animation,
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0, 0.03),
-                      end: Offset.zero,
-                    ).animate(animation),
-                    child: child,
-                  ),
-                );
-              },
-              child: _showDashboard
-                  ? _buildDashboardView(context)
-                  : _buildSetupView(context),
-            ),
-          ),
+          SafeArea(child: _buildSetupView(context)),
           if (_showSplashOverlay) _buildSplashOverlay(),
         ],
       ),
@@ -904,57 +975,140 @@ class _VocalPointShellState extends State<VocalPointShell> {
           child: Stack(
             children: [
               SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 20, 16, 56),
+                padding: const EdgeInsets.fromLTRB(14, 16, 14, 40),
                 child: ConstrainedBox(
                   constraints: BoxConstraints(maxWidth: maxWidth),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _buildTopBar(showBackToDashboard: _dashboardUnlocked),
-                      const SizedBox(height: 28),
-                      GlassCard(
-                        padding: const EdgeInsets.fromLTRB(24, 24, 24, 26),
+                      _buildTopBar(),
+                      const SizedBox(height: 20),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(6, 0, 6, 20),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Build your signal chain',
-                              style: Theme.of(context).textTheme.headlineMedium
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: -1.2,
-                                  ),
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                final showSideBySide =
+                                    constraints.maxWidth >= 620;
+
+                                if (!showSideBySide) {
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      _buildConnectionPanel(
+                                        SetupPanel.vocalPoint,
+                                      ),
+                                      const SizedBox(height: 14),
+                                      _buildConnectionPanel(SetupPanel.output),
+                                    ],
+                                  );
+                                }
+
+                                return Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: _buildConnectionPanel(
+                                        SetupPanel.vocalPoint,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: _buildConnectionPanel(
+                                        SetupPanel.output,
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
                             ),
                             const SizedBox(height: 12),
-                            const Text(
-                              'Start by pairing VocalPoint and choosing where audio should land. Once both links are ready, the control surface opens automatically.',
-                              style: TextStyle(
-                                color: AppColors.muted,
-                                height: 1.45,
-                                fontSize: 15,
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            _buildConnectionPanel(SetupPanel.vocalPoint),
-                            const SizedBox(height: 20),
-                            _buildConnectionPanel(SetupPanel.output),
-                            if (_dashboardUnlocked && !_showDashboard) ...[
-                              const SizedBox(height: 24),
-                              FilledButton.icon(
-                                onPressed: () =>
-                                    setState(() => _showDashboard = true),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: _highlightColor,
-                                  foregroundColor: Colors.black,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 18,
+                            Align(
+                              alignment: Alignment.center,
+                              child: TextButton(
+                                onPressed: _skipToDashboard,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: AppColors.white.withValues(
+                                    alpha: 0.65,
                                   ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(20),
+                                  textStyle: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.3,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
                                   ),
                                 ),
-                                icon: const Icon(Icons.waves),
-                                label: const Text('Enter control surface'),
+                                child: Text(
+                                  _dashboardUnlocked ? 'Close' : 'Skip',
+                                ),
+                              ),
+                            ),
+                            if (_dashboardUnlocked) ...[
+                              const SizedBox(height: 18),
+                              Wrap(
+                                spacing: 10,
+                                runSpacing: 10,
+                                children: [
+                                  _StatusChip(
+                                    label: _hasConnectedVocalPoint
+                                        ? 'VocalPoint linked'
+                                        : 'VocalPoint offline',
+                                    color: _hasConnectedVocalPoint
+                                        ? AppColors.success
+                                        : AppColors.danger,
+                                    icon: _hasConnectedVocalPoint
+                                        ? Icons.check_circle
+                                        : Icons.bluetooth_disabled,
+                                  ),
+                                  _StatusChip(
+                                    label: _hasSelectedOutputDevice
+                                        ? 'Output selected'
+                                        : 'Output missing',
+                                    color: _hasSelectedOutputDevice
+                                        ? AppColors.success
+                                        : AppColors.danger,
+                                    icon: _hasSelectedOutputDevice
+                                        ? Icons.headphones
+                                        : Icons.portable_wifi_off,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final wide = constraints.maxWidth >= 620;
+                                  if (!wide) {
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        _buildVolumeCard(context),
+                                        const SizedBox(height: 10),
+                                        _buildVoiceMixCard(context),
+                                      ],
+                                    );
+                                  }
+
+                                  return Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        child: _buildVolumeCard(context),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: _buildVoiceMixCard(context),
+                                      ),
+                                    ],
+                                  );
+                                },
                               ),
                             ],
                           ],
@@ -962,26 +1116,6 @@ class _VocalPointShellState extends State<VocalPointShell> {
                       ),
                     ],
                   ),
-                ),
-              ),
-              Positioned(
-                right: 8,
-                bottom: 6,
-                child: TextButton(
-                  onPressed: _skipToDashboard,
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.white.withValues(alpha: 0.45),
-                    textStyle: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: 0.3,
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
-                    ),
-                  ),
-                  child: const Text('Skip'),
                 ),
               ),
             ],
@@ -991,200 +1125,94 @@ class _VocalPointShellState extends State<VocalPointShell> {
     );
   }
 
-  Widget _buildDashboardView(BuildContext context) {
+  Widget _buildTopBar() {
     return LayoutBuilder(
-      key: const ValueKey<String>('dashboard-view'),
       builder: (context, constraints) {
-        final contentWidth = math.min(constraints.maxWidth - 32, 1100.0);
-        final wide = contentWidth > 760;
-        final cardWidth = wide ? (contentWidth - 12) / 2 : contentWidth;
-        final heroHeight = math.max(
-          300.0,
-          math.min(420.0, constraints.maxHeight * 0.48),
-        );
+        final compact = constraints.maxWidth < 390;
+        final menuSize = compact ? 48.0 : 56.0;
+        final menuPadding = compact ? 10.0 : 12.0;
 
-        return Align(
-          alignment: Alignment.topCenter,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: contentWidth),
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildTopBar(showBackToDashboard: false),
-                  const SizedBox(height: 22),
-                  SizedBox(
-                    height: heroHeight,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxWidth: wide ? 620 : contentWidth,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Welcome back',
-                                style: Theme.of(context).textTheme.displaySmall
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: -1.8,
-                                    ),
-                              ),
-                              const SizedBox(height: 12),
-                              const Text(
-                                'Your VocalPoint path is live. Tune output, monitor the device, and send control values to the ESP32 without leaving this surface.',
-                                style: TextStyle(
-                                  color: AppColors.muted,
-                                  height: 1.55,
-                                  fontSize: 16,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 22),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: [
-                            _StatusChip(
-                              label: _hasConnectedVocalPoint
-                                  ? 'VocalPoint linked'
-                                  : 'VocalPoint offline',
-                              color: _hasConnectedVocalPoint
-                                  ? AppColors.success
-                                  : AppColors.danger,
-                              icon: _hasConnectedVocalPoint
-                                  ? Icons.check_circle
-                                  : Icons.bluetooth_disabled,
-                            ),
-                            _StatusChip(
-                              label: _hasSelectedOutputDevice
-                                  ? 'Output selected'
-                                  : 'Output missing',
-                              color: _hasSelectedOutputDevice
-                                  ? AppColors.success
-                                  : AppColors.danger,
-                              icon: _hasSelectedOutputDevice
-                                  ? Icons.headphones
-                                  : Icons.portable_wifi_off,
-                            ),
-                          ],
-                        ),
-                      ],
+                  Text(
+                    'VocalPoint',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: compact ? 1.8 : 2.4,
+                      fontSize: compact ? 20 : null,
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      SizedBox(
-                        width: cardWidth,
-                        child: _buildVolumeCard(context),
-                      ),
-                      SizedBox(
-                        width: cardWidth,
-                        child: _buildDeviceCard(context),
-                      ),
-                      SizedBox(
-                        width: cardWidth,
-                        child: _buildVoiceMixCard(context),
-                      ),
-                      SizedBox(
-                        width: cardWidth,
-                        child: _buildDiagnosticsCard(context),
-                      ),
-                    ],
+                  const SizedBox(height: 4),
+                  Text(
+                    'Cut out the noise. Hear what matters.',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppColors.mutedSoft,
+                      letterSpacing: compact ? 0.2 : 0.6,
+                      fontSize: compact ? 12.5 : 14,
+                      height: 1.25,
+                    ),
                   ),
                 ],
               ),
             ),
-          ),
+            const SizedBox(width: 10),
+            PopupMenuButton<ProfileMenuAction>(
+              onSelected: _handleProfileMenu,
+              color: AppColors.panelSoft.withValues(alpha: 0.97),
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: ProfileMenuAction.about,
+                  child: Text('About'),
+                ),
+                PopupMenuItem(
+                  value: ProfileMenuAction.systemMetadata,
+                  child: Text('System and metadata'),
+                ),
+                PopupMenuItem(
+                  value: ProfileMenuAction.deviceDiagnostics,
+                  child: Text('Device diagnostics'),
+                ),
+              ],
+              child: Container(
+                width: menuSize,
+                height: menuSize,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.06),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.12),
+                  ),
+                ),
+                padding: EdgeInsets.all(menuPadding),
+                child: SvgPicture.asset(
+                  'assets/Squiggly-cropped.svg',
+                  colorFilter: const ColorFilter.mode(
+                    AppColors.white,
+                    BlendMode.srcIn,
+                  ),
+                ),
+              ),
+            ),
+          ],
         );
       },
-    );
-  }
-
-  Widget _buildTopBar({required bool showBackToDashboard}) {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'VocalPoint',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 2.4,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                showBackToDashboard
-                    ? 'Connection setup'
-                    : (_showDashboard ? 'Control surface' : 'Connection setup'),
-                style: const TextStyle(
-                  color: AppColors.mutedSoft,
-                  letterSpacing: 0.6,
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (showBackToDashboard)
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: TextButton.icon(
-              onPressed: () => setState(() => _showDashboard = true),
-              icon: const Icon(Icons.dashboard_customize_outlined),
-              label: const Text('Dashboard'),
-            ),
-          ),
-        PopupMenuButton<ProfileMenuAction>(
-          onSelected: _handleProfileMenu,
-          color: AppColors.panelSoft.withValues(alpha: 0.97),
-          itemBuilder: (context) => const [
-            PopupMenuItem(
-              value: ProfileMenuAction.profile,
-              child: Text('Profile'),
-            ),
-            PopupMenuItem(
-              value: ProfileMenuAction.deviceSettings,
-              child: Text('Device settings'),
-            ),
-            PopupMenuItem(value: ProfileMenuAction.about, child: Text('About')),
-          ],
-          child: Container(
-            width: 68,
-            height: 68,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white.withValues(alpha: 0.06),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-            ),
-            padding: const EdgeInsets.all(16),
-            child: SvgPicture.asset(
-              'assets/Squiggly-cropped.svg',
-              colorFilter: const ColorFilter.mode(
-                AppColors.white,
-                BlendMode.srcIn,
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 
   Widget _buildConnectionPanel(SetupPanel panel) {
     final accent = _highlightColor;
+    final compact = MediaQuery.sizeOf(context).width < 390;
+    final circleSize = compact ? 108.0 : 132.0;
+    final loaderSize = compact ? 92.0 : 112.0;
+    final iconSize = compact ? 54.0 : 68.0;
+    final labelFontSize = compact ? 13.0 : 15.0;
     final isVocalPoint = panel == SetupPanel.vocalPoint;
     final isExpanded = _expandedPanel == panel;
     final isScanning = _isScanning && _activeScanTarget == panel;
@@ -1195,16 +1223,13 @@ class _VocalPointShellState extends State<VocalPointShell> {
         ? _pendingVocalPointId != null
         : _pendingOutputId != null;
     final title = isVocalPoint
-        ? 'Connect to VocalPoint'
+        ? 'Connect to Vocal Point'
         : 'Connect to Output Device';
-    final subtitle = isVocalPoint
-        ? 'Pair with the ESP32 controller that receives your commands.'
-        : 'Pick the headphone, speaker, or listening target that VocalPoint will route to.';
-    final status = isConnected
+    final connectionLabel = isConnected
         ? (isVocalPoint
               ? (AppState.connectedDeviceName.value ?? 'Connected')
               : (AppState.audioOutputDeviceName.value ?? 'Selected'))
-        : (isConnecting ? 'Connecting...' : 'Not connected');
+        : title;
     final actionLabel = isScanning
         ? 'Scanning...'
         : (isVocalPoint
@@ -1215,218 +1240,205 @@ class _VocalPointShellState extends State<VocalPointShell> {
     return AnimatedSize(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Center(
-            child: Column(
-              children: [
-                GestureDetector(
-                  onTap: () => _openPanel(panel),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 350),
-                    curve: Curves.easeOutCubic,
-                    width: 176,
-                    height: 176,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isConnected
-                          ? const Color(0xFF13905A)
-                          : (isExpanded || isScanning
-                                ? const Color(0xFF1A1B1F)
-                                : const Color(0xFF111216)),
-                      border: Border.all(
-                        color: Colors.black.withValues(alpha: 0.88),
-                        width: isExpanded || isScanning ? 1.8 : 1.4,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.34),
-                          blurRadius: 18,
-                          offset: const Offset(0, 10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+        padding: isExpanded
+            ? EdgeInsets.fromLTRB(
+                compact ? 10 : 14,
+                compact ? 12 : 16,
+                compact ? 10 : 14,
+                compact ? 10 : 14,
+              )
+            : EdgeInsets.zero,
+        decoration: isExpanded
+            ? BoxDecoration(
+                borderRadius: BorderRadius.circular(30),
+                color: Colors.white.withValues(alpha: 0.06),
+                border: Border.all(
+                  color: isConnected
+                      ? AppColors.success.withValues(alpha: 0.45)
+                      : accent.withValues(alpha: 0.42),
+                  width: 1.3,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.16),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              )
+            : null,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Column(
+                children: [
+                  GestureDetector(
+                    onTap: () => _openPanel(panel),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 350),
+                      curve: Curves.easeOutCubic,
+                      width: circleSize,
+                      height: circleSize,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isConnected
+                            ? const Color(0xFF13905A)
+                            : (isExpanded || isScanning
+                                  ? shiftLightness(accent, -0.22)
+                                  : shiftLightness(accent, -0.30)),
+                        border: Border.all(
+                          color: isConnected
+                              ? AppColors.success.withValues(alpha: 0.9)
+                              : _highlightBright.withValues(alpha: 0.78),
+                          width: isExpanded || isScanning ? 1.8 : 1.4,
                         ),
-                      ],
-                    ),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        if (isConnecting || isScanning)
-                          SizedBox(
-                            width: 148,
-                            height: 148,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.6,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                isConnected ? AppColors.white : accent,
-                              ),
-                            ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: (isConnected ? AppColors.success : accent)
+                                .withValues(alpha: 0.20),
+                            blurRadius: 18,
+                            offset: const Offset(0, 10),
                           ),
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          mainAxisSize: MainAxisSize.min,
+                        ],
+                      ),
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          if (isConnecting || isScanning)
+                            SizedBox(
+                              width: loaderSize,
+                              height: loaderSize,
+                              child: CircularProgressIndicator(
+                                strokeWidth: compact ? 2.2 : 2.6,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  isConnected ? AppColors.white : accent,
+                                ),
+                              ),
+                            ),
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isVocalPoint
+                                    ? Icons.graphic_eq
+                                    : Icons.headphones,
+                                size: iconSize,
+                                color: AppColors.white,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: compact ? 8 : 12),
+                  Text(
+                    connectionLabel,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: labelFontSize,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isExpanded) ...[
+              SizedBox(height: compact ? 10 : 14),
+              GlassCard(
+                padding: EdgeInsets.fromLTRB(
+                  compact ? 14 : 18,
+                  compact ? 14 : 18,
+                  compact ? 14 : 18,
+                  compact ? 14 : 18,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      alignment: WrapAlignment.spaceBetween,
+                      children: [
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 340),
+                          child: Text(
+                            actionLabel,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
                           children: [
-                            Icon(
-                              isVocalPoint
-                                  ? Icons.graphic_eq
-                                  : Icons.headphones,
-                              size: 34,
-                              color: AppColors.white,
+                            FilledButton.icon(
+                              onPressed: isScanning
+                                  ? null
+                                  : () => _startScan(panel),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: accent,
+                                foregroundColor: Colors.black,
+                              ),
+                              icon: isScanning
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.black,
+                                      ),
+                                    )
+                                  : const Icon(Icons.radar),
+                              label: Text(isScanning ? 'Scanning...' : 'Scan'),
                             ),
-                            const SizedBox(height: 10),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 18,
+                            if (isScanning)
+                              OutlinedButton.icon(
+                                onPressed: _stopScan,
+                                icon: const Icon(Icons.pause_circle_outline),
+                                label: const Text('Stop'),
                               ),
-                              child: Text(
-                                title,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.2,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            TextButton(
-                              onPressed: () => _openPanel(panel),
-                              style: TextButton.styleFrom(
-                                padding: EdgeInsets.zero,
-                                minimumSize: Size.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                foregroundColor: Colors.white.withValues(
-                                  alpha: isConnected ? 0.78 : 0.54,
-                                ),
-                              ),
-                              child: Text(
-                                isConnected
-                                    ? 'tap to change'
-                                    : (isConnecting
-                                          ? 'connecting...'
-                                          : 'tap to open'),
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  letterSpacing: 0.6,
-                                  color: Colors.white.withValues(
-                                    alpha: isConnected ? 0.78 : 0.54,
-                                  ),
-                                ),
-                              ),
-                            ),
                           ],
                         ),
                       ],
                     ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  status,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(
-                    subtitle,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: AppColors.muted,
-                      height: 1.45,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (isExpanded) ...[
-            const SizedBox(height: 18),
-            GlassCard(
-              padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    alignment: WrapAlignment.spaceBetween,
-                    children: [
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 340),
+                    const SizedBox(height: 14),
+                    _buildSelectedSummary(panel),
+                    const SizedBox(height: 16),
+                    if (results.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          color: Colors.white.withValues(alpha: 0.04),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.08),
+                          ),
+                        ),
                         child: Text(
-                          actionLabel,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w700),
+                          isScanning
+                              ? 'Scanning for nearby devices...'
+                              : 'No devices yet. Start a scan to populate this list.',
+                          style: const TextStyle(color: AppColors.muted),
                         ),
+                      )
+                    else
+                      ...results.map(
+                        (device) => _buildScanResultTile(panel, device),
                       ),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: [
-                          FilledButton.icon(
-                            onPressed: isScanning
-                                ? null
-                                : () => _startScan(panel),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: accent,
-                              foregroundColor: Colors.black,
-                            ),
-                            icon: isScanning
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.black,
-                                    ),
-                                  )
-                                : const Icon(Icons.radar),
-                            label: Text(isScanning ? 'Scanning...' : 'Scan'),
-                          ),
-                          OutlinedButton.icon(
-                            onPressed: isScanning ? _stopScan : null,
-                            icon: const Icon(Icons.pause_circle_outline),
-                            label: const Text('Stop'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  _buildSelectedSummary(panel),
-                  const SizedBox(height: 16),
-                  if (results.isEmpty)
-                    Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        color: Colors.white.withValues(alpha: 0.04),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.08),
-                        ),
-                      ),
-                      child: Text(
-                        isScanning
-                            ? 'Scanning for nearby devices...'
-                            : 'No devices yet. Start a scan to populate this list.',
-                        style: const TextStyle(color: AppColors.muted),
-                      ),
-                    )
-                  else
-                    ...results.map(
-                      (device) => _buildScanResultTile(panel, device),
-                    ),
-                ],
+                  ],
+                ),
               ),
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -1438,9 +1450,6 @@ class _VocalPointShellState extends State<VocalPointShell> {
     final selectedName = isVocalPoint
         ? AppState.connectedDeviceName.value
         : AppState.audioOutputDeviceName.value;
-    final selectedId = isVocalPoint
-        ? AppState.connectedDeviceId.value
-        : AppState.bleAddress.value;
     final isReady = isVocalPoint
         ? _hasConnectedVocalPoint
         : _hasSelectedOutputDevice;
@@ -1511,19 +1520,6 @@ class _VocalPointShellState extends State<VocalPointShell> {
                             fontWeight: FontWeight.w700,
                             fontSize: 16,
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          isReady
-                              ? (selectedId == null || selectedId.isEmpty
-                                    ? 'Identifier unavailable'
-                                    : selectedId)
-                              : (isVocalPoint
-                                    ? 'Pick the VocalPoint controller first.'
-                                    : 'Pick an output target first.'),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppColors.muted),
                         ),
                       ],
                     ),
@@ -1644,197 +1640,128 @@ class _VocalPointShellState extends State<VocalPointShell> {
   Widget _buildVolumeCard(BuildContext context) {
     final accent = _highlightColor;
     final accentBright = _highlightBright;
-    return GlassCard(
-      padding: const EdgeInsets.all(22),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _CardHeading(
-            eyebrow: 'Control',
-            title: 'Volume and mute',
-            subtitle:
-                'Write direct volume values to the ESP32 volume characteristic.',
-            accent: accentBright,
-          ),
-          const SizedBox(height: 18),
-          ValueListenableBuilder<bool>(
-            valueListenable: AppState.isMuted,
-            builder: (context, muted, _) {
-              return ValueListenableBuilder<double>(
-                valueListenable: AppState.volume,
-                builder: (context, volume, __) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          _MetricChip(
-                            label: 'Volume ${volume.round()}',
-                            icon: Icons.tune,
-                            accent: accentBright,
-                          ),
-                          const SizedBox(width: 10),
-                          _MetricChip(
-                            label: muted ? 'Muted' : 'Live',
-                            icon: muted ? Icons.volume_off : Icons.volume_up,
-                            accent: muted
-                                ? AppColors.danger
-                                : AppColors.success,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                      SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          activeTrackColor: accent,
-                          inactiveTrackColor: Colors.white.withValues(
-                            alpha: 0.12,
-                          ),
-                          thumbColor: accentBright,
-                          overlayColor: accent.withValues(alpha: 0.16),
-                          trackHeight: 5,
+    return _buildControlPanelShell(
+      panel: ControlPanel.volume,
+      title: 'Control',
+      icon: Icons.volume_up_rounded,
+      child: GlassCard(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _CardHeading(
+              eyebrow: 'Control',
+              title: 'Volume and mute',
+              subtitle:
+                  'Write direct volume values to the ESP32 volume characteristic.',
+              accent: accentBright,
+            ),
+            const SizedBox(height: 18),
+            ValueListenableBuilder<bool>(
+              valueListenable: AppState.isMuted,
+              builder: (context, muted, _) {
+                return ValueListenableBuilder<double>(
+                  valueListenable: AppState.volume,
+                  builder: (context, volume, __) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            _MetricChip(
+                              label: 'Volume ${volume.round()}',
+                              icon: Icons.tune,
+                              accent: accentBright,
+                            ),
+                            const SizedBox(width: 10),
+                            _MetricChip(
+                              label: muted ? 'Muted' : 'Live',
+                              icon: muted ? Icons.volume_off : Icons.volume_up,
+                              accent: muted
+                                  ? AppColors.danger
+                                  : AppColors.success,
+                            ),
+                          ],
                         ),
-                        child: Slider(
-                          value: volume,
-                          min: 0,
-                          max: 100,
-                          divisions: 100,
-                          onChanged: muted ? null : _onVolumeChanged,
+                        const SizedBox(height: 18),
+                        SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            activeTrackColor: accent,
+                            inactiveTrackColor: Colors.white.withValues(
+                              alpha: 0.12,
+                            ),
+                            thumbColor: accentBright,
+                            overlayColor: accent.withValues(alpha: 0.16),
+                            trackHeight: 5,
+                          ),
+                          child: Slider(
+                            value: volume,
+                            min: 0,
+                            max: 100,
+                            divisions: 100,
+                            onChanged: muted ? null : _onVolumeChanged,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 14,
-                              ),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(18),
-                                color: Colors.white.withValues(alpha: 0.05),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.volume_mute_outlined,
-                                    color: AppColors.muted,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  const Expanded(
-                                    child: Text(
-                                      'Full mute',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 14,
+                                ),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(18),
+                                  color: Colors.white.withValues(alpha: 0.05),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.volume_mute_outlined,
+                                      color: AppColors.muted,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    const Expanded(
+                                      child: Text(
+                                        'Full mute',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  Switch.adaptive(
-                                    value: muted,
-                                    activeThumbColor: AppColors.success,
-                                    activeTrackColor: AppColors.success
-                                        .withValues(alpha: 0.35),
-                                    onChanged: _toggleMute,
-                                  ),
-                                ],
+                                    Switch.adaptive(
+                                      value: muted,
+                                      activeThumbColor: AppColors.success,
+                                      activeTrackColor: AppColors.success
+                                          .withValues(alpha: 0.35),
+                                      onChanged: _toggleMute,
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      FilledButton.icon(
-                        onPressed: () =>
-                            _writeVolumeToDevice(showSuccess: true),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: accent,
-                          foregroundColor: Colors.black,
+                          ],
                         ),
-                        icon: const Icon(Icons.send),
-                        label: const Text('Send volume now'),
-                      ),
-                    ],
-                  );
-                },
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDeviceCard(BuildContext context) {
-    final accent = _highlightColor;
-    final accentBright = _highlightBright;
-    return GlassCard(
-      padding: const EdgeInsets.all(22),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _CardHeading(
-            eyebrow: 'Devices',
-            title: 'Input and output routing',
-            subtitle:
-                'Monitor the active BLE controller and selected output target. You can drop back into setup at any time.',
-            accent: accentBright,
-          ),
-          const SizedBox(height: 18),
-          _DeviceStatusRow(
-            icon: Icons.graphic_eq,
-            title: 'VocalPoint controller',
-            name: AppState.connectedDeviceName.value ?? 'Not connected',
-            detail:
-                AppState.connectedDeviceId.value ??
-                'No BLE controller selected',
-            connected: _hasConnectedVocalPoint,
-          ),
-          const SizedBox(height: 12),
-          _DeviceStatusRow(
-            icon: Icons.headphones,
-            title: 'Output device',
-            name: AppState.audioOutputDeviceName.value ?? 'Not selected',
-            detail: AppState.bleAddress.value.isEmpty
-                ? 'No output target selected'
-                : AppState.bleAddress.value,
-            connected: _hasSelectedOutputDevice,
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => setState(() {
-                  _showDashboard = false;
-                  _expandedPanel = SetupPanel.vocalPoint;
-                }),
-                icon: const Icon(Icons.bluetooth_searching),
-                label: const Text('Change VocalPoint'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => setState(() {
-                  _showDashboard = false;
-                  _expandedPanel = SetupPanel.output;
-                }),
-                icon: const Icon(Icons.speaker_group),
-                label: const Text('Change output'),
-              ),
-              FilledButton.icon(
-                onPressed: _hasConnectedVocalPoint
-                    ? () => _syncSelectedOutputToDevice(showSuccess: true)
-                    : null,
-                style: FilledButton.styleFrom(
-                  backgroundColor: accent,
-                  foregroundColor: Colors.black,
-                ),
-                icon: const Icon(Icons.sync),
-                label: const Text('Sync routing'),
-              ),
-            ],
-          ),
-        ],
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          onPressed: () =>
+                              _writeVolumeToDevice(showSuccess: true),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: accent,
+                            foregroundColor: Colors.black,
+                          ),
+                          icon: const Icon(Icons.send),
+                          label: const Text('Send volume now'),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1842,82 +1769,183 @@ class _VocalPointShellState extends State<VocalPointShell> {
   Widget _buildVoiceMixCard(BuildContext context) {
     final accent = _highlightColor;
     final accentBright = _highlightBright;
-    return GlassCard(
-      padding: const EdgeInsets.all(22),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _CardHeading(
-            eyebrow: 'Mix',
-            title: 'Voice balance',
-            subtitle:
-                'Dummy control surface for prioritising different voices. PARAM2 still maps to the existing metadata token.',
-            accent: accentBright,
-          ),
-          const SizedBox(height: 18),
-          ..._param2Options.map(
-            (option) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: InkWell(
-                onTap: () => _sendParam2(option),
-                borderRadius: BorderRadius.circular(18),
-                child: ValueListenableBuilder<String>(
-                  valueListenable: AppState.param2,
-                  builder: (context, selected, _) {
-                    final active = selected == option;
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 220),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(18),
-                        color: active
-                            ? accent.withValues(alpha: 0.18)
-                            : Colors.white.withValues(alpha: 0.05),
-                        border: Border.all(
+    return _buildControlPanelShell(
+      panel: ControlPanel.mix,
+      title: 'Mix',
+      icon: Icons.multitrack_audio_rounded,
+      child: GlassCard(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _CardHeading(
+              eyebrow: 'Mix',
+              title: 'Voice balance',
+              subtitle:
+                  'Dummy control surface for prioritising different voices. PARAM2 still maps to the existing metadata token.',
+              accent: accentBright,
+            ),
+            const SizedBox(height: 18),
+            ..._param2Options.map(
+              (option) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: InkWell(
+                  onTap: () => _sendParam2(option),
+                  borderRadius: BorderRadius.circular(18),
+                  child: ValueListenableBuilder<String>(
+                    valueListenable: AppState.param2,
+                    builder: (context, selected, _) {
+                      final active = selected == option;
+                      return AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(18),
                           color: active
-                              ? accent.withValues(alpha: 0.72)
-                              : Colors.white.withValues(alpha: 0.08),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            active
-                                ? Icons.multitrack_audio
-                                : Icons.person_2_outlined,
-                            color: active ? accentBright : AppColors.muted,
+                              ? accent.withValues(alpha: 0.18)
+                              : Colors.white.withValues(alpha: 0.05),
+                          border: Border.all(
+                            color: active
+                                ? accent.withValues(alpha: 0.72)
+                                : Colors.white.withValues(alpha: 0.08),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              option,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              active
+                                  ? Icons.multitrack_audio
+                                  : Icons.person_2_outlined,
+                              color: active ? accentBright : AppColors.muted,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                option,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
-                          ),
-                          if (active)
-                            Icon(Icons.check_circle, color: accentBright),
-                        ],
-                      ),
-                    );
-                  },
+                            if (active)
+                              Icon(Icons.check_circle, color: accentBright),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Future voice/person sliders can live here without changing the current BLE transport contract.',
-            style: TextStyle(color: AppColors.muted),
-          ),
-        ],
+            const SizedBox(height: 8),
+            const Text(
+              'Future voice/person sliders can live here without changing the current BLE transport contract.',
+              style: TextStyle(color: AppColors.muted),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildDiagnosticsCard(BuildContext context) {
+  Widget _buildControlPanelShell({
+    required ControlPanel panel,
+    required String title,
+    required IconData icon,
+    required Widget child,
+  }) {
     final accent = _highlightColor;
+    final compact = MediaQuery.sizeOf(context).width < 390;
+    final circleSize = compact ? 108.0 : 132.0;
+    final iconSize = compact ? 54.0 : 68.0;
+    final isExpanded = _expandedControlPanel == panel;
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+        padding: isExpanded
+            ? EdgeInsets.fromLTRB(
+                compact ? 10 : 14,
+                compact ? 12 : 16,
+                compact ? 10 : 14,
+                compact ? 10 : 14,
+              )
+            : EdgeInsets.zero,
+        decoration: isExpanded
+            ? BoxDecoration(
+                borderRadius: BorderRadius.circular(30),
+                color: Colors.white.withValues(alpha: 0.06),
+                border: Border.all(
+                  color: accent.withValues(alpha: 0.42),
+                  width: 1.3,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.16),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              )
+            : null,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Column(
+                children: [
+                  GestureDetector(
+                    onTap: () => _toggleControlPanel(panel),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 350),
+                      curve: Curves.easeOutCubic,
+                      width: circleSize,
+                      height: circleSize,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isExpanded
+                            ? shiftLightness(accent, -0.22)
+                            : shiftLightness(accent, -0.30),
+                        border: Border.all(
+                          color: _highlightBright.withValues(alpha: 0.78),
+                          width: isExpanded ? 1.8 : 1.4,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: accent.withValues(alpha: 0.20),
+                            blurRadius: 18,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
+                      ),
+                      child: Icon(icon, size: iconSize, color: AppColors.white),
+                    ),
+                  ),
+                  SizedBox(height: compact ? 8 : 12),
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: compact ? 13 : 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isExpanded) ...[SizedBox(height: compact ? 10 : 14), child],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeviceDiagnosticsContent() {
     final accentBright = _highlightBright;
     final diagnostics = <_DiagnosticMetric>[
       _DiagnosticMetric(
@@ -1934,190 +1962,120 @@ class _VocalPointShellState extends State<VocalPointShell> {
       _DiagnosticMetric(label: 'CPU load', value: '18%'),
     ];
 
-    return GlassCard(
-      padding: const EdgeInsets.all(22),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _CardHeading(
-                  eyebrow: 'Diagnostics',
-                  title: 'System and metadata',
-                  subtitle:
-                      'UUIDs, battery writes, and transport state for the current setup.',
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          'Transport state for the current setup.',
+          style: TextStyle(color: AppColors.muted, height: 1.5),
+        ),
+        const SizedBox(height: 18),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: diagnostics
+              .map(
+                (metric) => _MetricChip(
+                  label: '${metric.label}: ${metric.value}',
+                  icon: Icons.circle,
                   accent: accentBright,
                 ),
-              ),
-              IconButton(
-                onPressed: () => setState(() {
-                  _showDiagnosticsDetails = !_showDiagnosticsDetails;
-                }),
-                icon: Icon(
-                  _showDiagnosticsDetails
-                      ? Icons.expand_less
-                      : Icons.expand_more,
-                ),
-              ),
-            ],
+              )
+              .toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSystemMetadataContent() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          'UUIDs, highlight colour, and metadata writes for the current setup.',
+          style: TextStyle(color: AppColors.muted, height: 1.5),
+        ),
+        const SizedBox(height: 18),
+        const Text(
+          'Highlight colour',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: AppColors.muted,
+            letterSpacing: 0.5,
           ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: diagnostics
-                .map(
-                  (metric) => _MetricChip(
-                    label: '${metric.label}: ${metric.value}',
-                    icon: Icons.circle,
-                    accent: accentBright,
-                  ),
-                )
-                .toList(),
-          ),
-          const SizedBox(height: 16),
-          ValueListenableBuilder<double>(
-            valueListenable: AppState.battery,
-            builder: (context, battery, _) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Battery mirror ${battery.round()}%',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: accent,
-                      inactiveTrackColor: Colors.white.withValues(alpha: 0.12),
-                      thumbColor: accentBright,
-                      overlayColor: accent.withValues(alpha: 0.16),
-                      trackHeight: 4,
-                    ),
-                    child: Slider(
-                      value: battery,
-                      min: 0,
-                      max: 100,
-                      divisions: 100,
-                      onChanged: _onBatteryChanged,
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-          AnimatedCrossFade(
-            duration: const Duration(milliseconds: 240),
-            crossFadeState: _showDiagnosticsDetails
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            firstChild: Row(
-              children: [
-                FilledButton.icon(
-                  onPressed: () => _writeBatteryToDevice(showSuccess: true),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: accent,
-                    foregroundColor: Colors.black,
-                  ),
-                  icon: const Icon(Icons.battery_charging_full),
-                  label: const Text('Send battery'),
-                ),
-              ],
-            ),
-            secondChild: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Highlight colour',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.muted,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: _highlightOptions.map((color) {
-                    final selected =
-                        color.toARGB32() == _highlightColor.toARGB32();
-                    return InkWell(
-                      onTap: () {
-                        setState(() {
-                          AppState.highlightColor.value = color;
-                        });
-                      },
-                      borderRadius: BorderRadius.circular(999),
-                      child: Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: color,
-                          border: Border.all(
-                            color: selected
-                                ? AppColors.white
-                                : Colors.white.withValues(alpha: 0.20),
-                            width: selected ? 2.2 : 1.0,
-                          ),
-                        ),
+        ),
+        const SizedBox(height: 10),
+        ValueListenableBuilder<Color>(
+          valueListenable: AppState.highlightColor,
+          builder: (context, selectedColor, _) {
+            return Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: _highlightOptions.map((color) {
+                final selected = color.toARGB32() == selectedColor.toARGB32();
+                return InkWell(
+                  onTap: () {
+                    AppState.highlightColor.value = color;
+                  },
+                  borderRadius: BorderRadius.circular(999),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: color,
+                      border: Border.all(
+                        color: selected
+                            ? AppColors.white
+                            : Colors.white.withValues(alpha: 0.20),
+                        width: selected ? 2.2 : 1.0,
                       ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: _serviceUuidController,
-                  onChanged: (value) =>
-                      AppState.volumeServiceUuid.value = value,
-                  decoration: const InputDecoration(labelText: 'Service UUID'),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _volumeCharUuidController,
-                  onChanged: (value) => AppState.volumeCharUuid.value = value,
-                  decoration: const InputDecoration(
-                    labelText: 'Volume characteristic UUID',
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _metadataCharUuidController,
-                  onChanged: (value) => AppState.metadataCharUuid.value = value,
-                  decoration: const InputDecoration(
-                    labelText: 'Metadata characteristic UUID',
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    FilledButton.icon(
-                      onPressed: () => _writeBatteryToDevice(showSuccess: true),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: accent,
-                        foregroundColor: Colors.black,
-                      ),
-                      icon: const Icon(Icons.battery_full),
-                      label: const Text('Send battery'),
                     ),
-                    OutlinedButton.icon(
-                      onPressed: () =>
-                          _syncSelectedOutputToDevice(showSuccess: true),
-                      icon: const Icon(Icons.route),
-                      label: const Text('Send output metadata'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                  ),
+                );
+              }).toList(),
+            );
+          },
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: _serviceUuidController,
+          onChanged: (value) => AppState.volumeServiceUuid.value = value,
+          decoration: const InputDecoration(labelText: 'Service UUID'),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _volumeCharUuidController,
+          onChanged: (value) => AppState.volumeCharUuid.value = value,
+          decoration: const InputDecoration(
+            labelText: 'Volume characteristic UUID',
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _metadataCharUuidController,
+          onChanged: (value) => AppState.metadataCharUuid.value = value,
+          decoration: const InputDecoration(
+            labelText: 'Metadata characteristic UUID',
+          ),
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            OutlinedButton.icon(
+              onPressed: () => _syncSelectedOutputToDevice(showSuccess: true),
+              icon: const Icon(Icons.route),
+              label: const Text('Send output metadata'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -2358,81 +2316,6 @@ class _MetricChip extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DeviceStatusRow extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String name;
-  final String detail;
-  final bool connected;
-
-  const _DeviceStatusRow({
-    required this.icon,
-    required this.title,
-    required this.name,
-    required this.detail,
-    required this.connected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final inactiveAccent = AppState.highlightColor.value;
-    final inactiveAccentBright = shiftLightness(inactiveAccent, 0.14);
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        color: Colors.white.withValues(alpha: 0.05),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: (connected ? AppColors.success : inactiveAccent)
-                  .withValues(alpha: 0.16),
-            ),
-            child: Icon(
-              icon,
-              color: connected ? AppColors.success : inactiveAccentBright,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(color: AppColors.muted, fontSize: 13),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  detail,
-                  style: const TextStyle(
-                    color: AppColors.mutedSoft,
-                    fontSize: 12.5,
-                  ),
-                ),
-              ],
             ),
           ),
         ],
