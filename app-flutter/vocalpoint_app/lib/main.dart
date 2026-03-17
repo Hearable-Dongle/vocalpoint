@@ -2,19 +2,27 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:universal_ble/universal_ble.dart';
 
 void main() => runApp(const MyApp());
 
 class AppColors {
-  static const Color charcoal = Color(0xFF2C2C2C);
-  static const Color charcoalSoft = Color(0xFF3A3A3A);
-  static const Color background = Color(0xFFF5F5F5);
+  static const Color background = Color(0xFF181818);
+  static const Color surfaceDark = Color(0xFF232323);
+  static const Color surfaceDarkSoft = Color(0xFF2C2C2C);
+  static const Color outline = Color(0xFF3A3A3A);
+
   static const Color peach = Color(0xFFF4A261);
   static const Color yellow = Color(0xFFE9C46A);
   static const Color coral = Color(0xFFE76F51);
+
   static const Color white = Colors.white;
   static const Color black = Colors.black87;
+  static const Color textMuted = Color(0xFFB8B8B8);
+
+  static const Color charcoal = surfaceDarkSoft;
+  static const Color charcoalSoft = outline;
 }
 
 /// Simple app-wide state (no extra packages).
@@ -74,8 +82,8 @@ class MyApp extends StatelessWidget {
     final base = ThemeData(
       useMaterial3: true,
       colorScheme: const ColorScheme(
-        brightness: Brightness.light,
-        primary: AppColors.charcoal,
+        brightness: Brightness.dark,
+        primary: AppColors.surfaceDarkSoft,
         onPrimary: AppColors.white,
         secondary: AppColors.yellow,
         onSecondary: AppColors.black,
@@ -83,8 +91,8 @@ class MyApp extends StatelessWidget {
         onTertiary: AppColors.black,
         error: AppColors.coral,
         onError: AppColors.white,
-        surface: AppColors.white,
-        onSurface: AppColors.black,
+        surface: AppColors.surfaceDark,
+        onSurface: AppColors.white,
       ),
     );
 
@@ -94,17 +102,17 @@ class MyApp extends StatelessWidget {
       theme: base.copyWith(
         scaffoldBackgroundColor: AppColors.background,
         appBarTheme: const AppBarTheme(
-          backgroundColor: AppColors.charcoal,
+          backgroundColor: AppColors.background,
           foregroundColor: AppColors.white,
           elevation: 0,
           centerTitle: false,
         ),
         cardTheme: CardThemeData(
-          color: AppColors.white,
-          elevation: 2,
-          shadowColor: Colors.black12,
+          color: AppColors.surfaceDark,
+          elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(22),
+            side: const BorderSide(color: AppColors.outline),
           ),
           margin: EdgeInsets.zero,
         ),
@@ -133,8 +141,8 @@ class MyApp extends StatelessWidget {
         ),
         outlinedButtonTheme: OutlinedButtonThemeData(
           style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.charcoal,
-            side: const BorderSide(color: AppColors.charcoal, width: 1.2),
+            foregroundColor: AppColors.white,
+            side: const BorderSide(color: AppColors.outline, width: 1.2),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
@@ -150,15 +158,15 @@ class MyApp extends StatelessWidget {
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: Colors.white,
-          labelStyle: const TextStyle(color: AppColors.charcoalSoft),
+          fillColor: AppColors.surfaceDark,
+          labelStyle: const TextStyle(color: AppColors.textMuted),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: AppColors.charcoalSoft),
+            borderSide: const BorderSide(color: AppColors.outline),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Colors.black12),
+            borderSide: const BorderSide(color: AppColors.outline),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
@@ -166,11 +174,11 @@ class MyApp extends StatelessWidget {
           ),
         ),
         dividerTheme: const DividerThemeData(
-          color: Colors.black12,
+          color: AppColors.outline,
           thickness: 1,
         ),
         snackBarTheme: SnackBarThemeData(
-          backgroundColor: AppColors.charcoal,
+          backgroundColor: AppColors.surfaceDarkSoft,
           contentTextStyle: const TextStyle(color: AppColors.white),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
@@ -197,8 +205,16 @@ class HomeButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return IconButton(
       tooltip: "Home",
-      icon: const Icon(Icons.home),
       onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
+      icon: SvgPicture.asset(
+        'assets/Squiggly.svg',
+        width: 28,
+        height: 28,
+        colorFilter: const ColorFilter.mode(
+          AppColors.white,
+          BlendMode.srcIn,
+        ),
+      ),
     );
   }
 }
@@ -215,7 +231,7 @@ class HomePage extends StatelessWidget {
             label,
             style: const TextStyle(
               fontWeight: FontWeight.w600,
-              color: AppColors.charcoalSoft,
+              color: AppColors.textMuted,
             ),
           ),
         ),
@@ -224,7 +240,7 @@ class HomePage extends StatelessWidget {
     );
   }
 
-  Widget _menuButton(
+  Widget _circleNavButton(
     BuildContext context, {
     required IconData icon,
     required String label,
@@ -232,17 +248,35 @@ class HomePage extends StatelessWidget {
     required Color background,
     required Color foreground,
   }) {
-    return SizedBox(
-      height: 56,
-      child: ElevatedButton.icon(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: background,
-          foregroundColor: foreground,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Material(
+          color: background,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () => Navigator.pushNamed(context, route),
+            child: SizedBox(
+              width: 96,
+              height: 96,
+              child: Icon(icon, color: foreground, size: 38),
+            ),
+          ),
         ),
-        icon: Icon(icon),
-        label: Text(label),
-        onPressed: () => Navigator.pushNamed(context, route),
-      ),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: 110,
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -250,75 +284,66 @@ class HomePage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("VocalPoint"),
+        title: const SizedBox.shrink(),
         actions: const [HomeButton()],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppColors.charcoal,
-                borderRadius: BorderRadius.circular(28),
-              ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            const SizedBox(height: 12),
+            Center(
+              child: Wrap(
+                spacing: 24,
+                runSpacing: 24,
+                alignment: WrapAlignment.center,
                 children: [
-                  Text(
-                    "Navigate",
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.white,
-                    ),
+                  _circleNavButton(
+                    context,
+                    icon: Icons.bluetooth,
+                    label: "VocalPoint",
+                    route: '/connect-vocalpoint',
+                    background: AppColors.yellow,
+                    foreground: AppColors.black,
+                  ),
+                  _circleNavButton(
+                    context,
+                    icon: Icons.hearing,
+                    label: "Listening Device",
+                    route: '/connect-listening-device',
+                    background: AppColors.peach,
+                    foreground: AppColors.black,
+                  ),
+                  _circleNavButton(
+                    context,
+                    icon: Icons.volume_up,
+                    label: "Volume",
+                    route: '/volume',
+                    background: AppColors.coral,
+                    foreground: AppColors.white,
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-            _menuButton(
-              context,
-              icon: Icons.bluetooth,
-              label: "Connect to VocalPoint Device",
-              route: '/connect-vocalpoint',
-              background: AppColors.yellow,
-              foreground: AppColors.black,
-            ),
-            const SizedBox(height: 12),
-            _menuButton(
-              context,
-              icon: Icons.hearing,
-              label: "Connect to Listening Device",
-              route: '/connect-listening-device',
-              background: AppColors.peach,
-              foreground: AppColors.black,
-            ),
-            const SizedBox(height: 12),
-            _menuButton(
-              context,
-              icon: Icons.volume_up,
-              label: "Volume Control",
-              route: '/volume',
-              background: AppColors.coral,
-              foreground: AppColors.white,
-            ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppColors.surfaceDark,
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.black12),
+                border: Border.all(color: AppColors.outline),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
                     "Quick status",
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.white,
+                    ),
                   ),
                   const SizedBox(height: 14),
                   _statusLine(
@@ -341,7 +366,7 @@ class HomePage extends StatelessWidget {
                             return Text(
                               "Yes — ${name ?? 'Unnamed'}",
                               style: const TextStyle(
-                                color: AppColors.charcoal,
+                                color: AppColors.white,
                                 fontWeight: FontWeight.w700,
                               ),
                             );
@@ -357,7 +382,10 @@ class HomePage extends StatelessWidget {
                       valueListenable: AppState.volume,
                       builder: (_, v, __) => Text(
                         v.round().toString(),
-                        style: const TextStyle(fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.white,
+                        ),
                       ),
                     ),
                   ),
@@ -368,7 +396,10 @@ class HomePage extends StatelessWidget {
                       valueListenable: AppState.rememberedDevices,
                       builder: (_, devices, __) => Text(
                         "${devices.length} device(s)",
-                        style: const TextStyle(fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.white,
+                        ),
                       ),
                     ),
                   ),
@@ -681,9 +712,7 @@ class _FilteredBluetoothPageState extends State<FilteredBluetoothPage> {
                         color: connected ? AppColors.peach : Colors.white,
                         borderRadius: BorderRadius.circular(22),
                         border: Border.all(
-                          color: connected
-                              ? AppColors.peach
-                              : Colors.black12,
+                          color: connected ? AppColors.peach : Colors.black12,
                         ),
                       ),
                       child: Padding(
@@ -718,9 +747,8 @@ class _FilteredBluetoothPageState extends State<FilteredBluetoothPage> {
                             const SizedBox(width: 8),
                             FilledButton(
                               style: FilledButton.styleFrom(
-                                backgroundColor: connected
-                                    ? AppColors.coral
-                                    : null,
+                                backgroundColor:
+                                    connected ? AppColors.coral : null,
                               ),
                               onPressed: connected ? _disconnect : null,
                               child: const Text("Disconnect"),
@@ -737,7 +765,8 @@ class _FilteredBluetoothPageState extends State<FilteredBluetoothPage> {
             Align(
               alignment: Alignment.centerLeft,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
                   color: AppColors.yellow,
                   borderRadius: BorderRadius.circular(999),
@@ -773,7 +802,8 @@ class _FilteredBluetoothPageState extends State<FilteredBluetoothPage> {
             Align(
               alignment: Alignment.centerLeft,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
                   color: AppColors.peach,
                   borderRadius: BorderRadius.circular(999),
@@ -1021,15 +1051,12 @@ class _VolumeControlPageState extends State<VolumeControlPage> {
                 return ValueListenableBuilder<String?>(
                   valueListenable: AppState.connectedDeviceName,
                   builder: (_, name, __) {
-                    final connected = id != null;
                     return Container(
                       decoration: BoxDecoration(
-                        color: connected ? AppColors.peach : Colors.white,
+                        color: id != null ? AppColors.peach : Colors.white,
                         borderRadius: BorderRadius.circular(22),
                         border: Border.all(
-                          color: connected
-                              ? AppColors.peach
-                              : Colors.black12,
+                          color: id != null ? AppColors.peach : Colors.black12,
                         ),
                       ),
                       child: Padding(
@@ -1124,10 +1151,10 @@ class _VolumeControlPageState extends State<VolumeControlPage> {
                                 data: SliderTheme.of(context).copyWith(
                                   activeTrackColor: AppColors.peach,
                                   inactiveTrackColor:
-                                      AppColors.yellow.withValues(alpha: 0.35),
+                                      AppColors.yellow.withOpacity(0.35),
                                   thumbColor: AppColors.coral,
                                   overlayColor:
-                                      AppColors.coral.withValues(alpha: 0.15),
+                                      AppColors.coral.withOpacity(0.15),
                                   trackHeight: 6,
                                 ),
                                 child: Slider(
@@ -1261,7 +1288,6 @@ class _RememberedListCard extends StatelessWidget {
   }
 }
 
-/// A small “empty state” card.
 class _EmptyCard extends StatelessWidget {
   final String text;
   final IconData icon;
