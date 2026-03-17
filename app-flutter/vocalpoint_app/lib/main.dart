@@ -1954,8 +1954,8 @@ class _EmptyCard extends StatelessWidget {
 }
 
 bool _isVocalPointDevice(BleDevice device) {
-  final name = device.name?.trim() ?? "";
-  return name.toLowerCase() == "vocalpoint";
+  final name = device.name?.trim().toLowerCase() ?? "";
+  return name.contains("vocalpoint");
 }
 
 bool _isNamedDevice(BleDevice device) {
