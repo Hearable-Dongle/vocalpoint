@@ -12,19 +12,20 @@
  */
 /**************************************************************************************************/
 
+#include "ble_gatt_server.h"
 
 #include <assert.h>
-#include "ble_gatt_server.h"
+#include <stdio.h>
+
 #include "esp_log.h"
 #include "host/ble_hs.h"
 #include "host/ble_uuid.h"
-#include "i2c_bridge.h"
+#include "shared_state.h"
 #include "services/ans/ble_svc_ans.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
 
-static uint8_t s_volume = 50;
-static uint8_t s_battery = 87;
+static const char *s_tag = "ble_gatt_server";
 static uint16_t s_batt_chr_handle;
 
 static int battery_access_cb(uint16_t conn_handle,
@@ -37,8 +38,10 @@ static int battery_access_cb(uint16_t conn_handle,
     (void)arg;
 
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
-        s_battery = i2c_bridge_get_latest_battery();
-        int rc = os_mbuf_append(ctxt->om, &s_battery, sizeof(s_battery));
+        vp_state_snapshot_t snapshot;
+        vp_state_get_snapshot(&snapshot);
+
+        int rc = os_mbuf_append(ctxt->om, &snapshot.battery, sizeof(snapshot.battery));
         return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
 
@@ -55,7 +58,11 @@ static int volume_access_cb(uint16_t conn_handle,
     (void)arg;
 
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
-        return os_mbuf_append(ctxt->om, &s_volume, sizeof(s_volume));
+        vp_state_snapshot_t snapshot;
+        vp_state_get_snapshot(&snapshot);
+
+        int rc = os_mbuf_append(ctxt->om, &snapshot.volume, sizeof(snapshot.volume));
+        return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
 
     if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
@@ -65,13 +72,54 @@ static int volume_access_cb(uint16_t conn_handle,
             return BLE_ATT_ERR_UNLIKELY;
         }
 
-        if (value > 100) {
-            value = 100;
+        vp_state_set_volume(value);
+        ESP_LOGI(s_tag, "Volume set to %u", value > 100 ? 100 : value);
+        return 0;
+    }
+
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
+static int metadata_access_cb(uint16_t conn_handle,
+                              uint16_t attr_handle,
+                              struct ble_gatt_access_ctxt *ctxt,
+                              void *arg)
+{
+    (void)conn_handle;
+    (void)attr_handle;
+    (void)arg;
+
+    if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
+        vp_state_snapshot_t snapshot;
+        vp_state_get_snapshot(&snapshot);
+
+        char text[96];
+        int len = snprintf(text,
+                           sizeof(text),
+                           "P1=%s;P2=%s",
+                           snapshot.param1,
+                           snapshot.param2);
+        if (len < 0) {
+            return BLE_ATT_ERR_UNLIKELY;
         }
 
-        s_volume = value;
-        i2c_bridge_set_latest_volume(value);
-        ESP_LOGI("VOLUME", "Volume set to %u", s_volume);
+        if ((size_t)len >= sizeof(text)) {
+            len = sizeof(text);
+        }
+
+        int rc = os_mbuf_append(ctxt->om, text, (uint16_t)len);
+        return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+
+    if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
+        uint8_t payload[128];
+        uint16_t copied = 0;
+        int rc = ble_hs_mbuf_to_flat(ctxt->om, payload, sizeof(payload), &copied);
+        if (rc != 0) {
+            return BLE_ATT_ERR_UNLIKELY;
+        }
+
+        vp_state_update_from_ble_payload(payload, copied);
         return 0;
     }
 
@@ -86,6 +134,11 @@ static const struct ble_gatt_svc_def s_gatt_services[] = {
             {
                 .uuid = BLE_UUID16_DECLARE(0xFF01),
                 .access_cb = volume_access_cb,
+                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE,
+            },
+            {
+                .uuid = BLE_UUID16_DECLARE(0xFF02),
+                .access_cb = metadata_access_cb,
                 .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE,
             },
             {0},
@@ -113,7 +166,10 @@ void ble_gatt_server_notify_battery(uint16_t conn_handle)
         return;
     }
 
-    struct os_mbuf *om = ble_hs_mbuf_from_flat(&s_battery, sizeof(s_battery));
+    vp_state_snapshot_t snapshot;
+    vp_state_get_snapshot(&snapshot);
+
+    struct os_mbuf *om = ble_hs_mbuf_from_flat(&snapshot.battery, sizeof(snapshot.battery));
     if (om == NULL) {
         return;
     }
@@ -123,11 +179,7 @@ void ble_gatt_server_notify_battery(uint16_t conn_handle)
 
 void ble_gatt_server_set_battery(uint8_t pct)
 {
-    if (pct > 100) {
-        pct = 100;
-    }
-
-    s_battery = pct;
+    vp_state_set_battery(pct);
 }
 
 void ble_gatt_server_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg)

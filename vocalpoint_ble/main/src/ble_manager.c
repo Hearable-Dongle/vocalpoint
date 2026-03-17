@@ -14,6 +14,7 @@
 
 #include <assert.h>
 #include <inttypes.h>
+#include <stdio.h>
 #include <string.h>
 #include "ble_manager.h"
 #include "ble_gatt_server.h"
@@ -24,12 +25,12 @@
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
+#include "shared_state.h"
 #include "services/gap/ble_svc_gap.h"
 
 #define BLE_ADV_SERVICE_UUID 0x1811
 
 static const char *s_tag = "NimBLE_BLE_PRPH";
-static uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 
 #if CONFIG_EXAMPLE_RANDOM_ADDR
 static uint8_t s_own_addr_type = BLE_OWN_ADDR_RANDOM;
@@ -71,6 +72,23 @@ void ble_store_config_init(void);
  */
 /**************************************************************************************************/
 static int ble_gap_event_handler(struct ble_gap_event *event, void *arg);
+
+static void ble_addr_to_string(const uint8_t *addr, char *out, size_t out_len)
+{
+    if (addr == NULL || out == NULL || out_len == 0) {
+        return;
+    }
+
+    snprintf(out,
+             out_len,
+             "%02X:%02X:%02X:%02X:%02X:%02X",
+             addr[5],
+             addr[4],
+             addr[3],
+             addr[2],
+             addr[1],
+             addr[0]);
+}
 
 static void ble_print_conn_desc(struct ble_gap_conn_desc *desc)
 {
@@ -209,10 +227,13 @@ static int ble_gap_event_handler(struct ble_gap_event *event, void *arg)
                         event->connect.status);
 
             if (event->connect.status == 0) {
-                s_conn_handle = event->connect.conn_handle;
                 rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
                 assert(rc == 0);
                 ble_print_conn_desc(&desc);
+
+                char peer_addr[VP_BLE_ADDR_MAX_LEN];
+                ble_addr_to_string(desc.peer_id_addr.val, peer_addr, sizeof(peer_addr));
+                vp_state_set_ble_addr(peer_addr);
             }
 
             MODLOG_DFLT(INFO, "\n");
@@ -227,7 +248,6 @@ static int ble_gap_event_handler(struct ble_gap_event *event, void *arg)
             return 0;
 
         case BLE_GAP_EVENT_DISCONNECT:
-            s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
             MODLOG_DFLT(INFO, "disconnect; reason=%d ", event->disconnect.reason);
             ble_print_conn_desc(&event->disconnect.conn);
             MODLOG_DFLT(INFO, "\n");
@@ -425,6 +445,10 @@ static void ble_on_sync(void)
     uint8_t addr_val[6] = {0};
     rc = ble_hs_id_copy_addr(s_own_addr_type, addr_val, NULL);
     if (rc == 0) {
+        char own_addr[VP_BLE_ADDR_MAX_LEN];
+        ble_addr_to_string(addr_val, own_addr, sizeof(own_addr));
+        vp_state_set_ble_addr(own_addr);
+
         MODLOG_DFLT(INFO, "Device Address: ");
         print_addr(addr_val);
         MODLOG_DFLT(INFO, "\n");

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -46,12 +47,25 @@ class AppState {
 
   /// Volume 0..100
   static final ValueNotifier<double> volume = ValueNotifier<double>(50);
+  static final ValueNotifier<double> battery = ValueNotifier<double>(75);
 
-  /// UUIDs for ESP32 control (default matches 0xFFFF service / 0xFF01 char).
+  static final ValueNotifier<String> bleAddress = ValueNotifier<String>("");
+  static final ValueNotifier<String?> audioOutputDeviceName =
+      ValueNotifier<String?>(null);
+  static final ValueNotifier<String> param1 = ValueNotifier<String>(
+    "Morning Tide",
+  );
+  static final ValueNotifier<String> param2 = ValueNotifier<String>(
+    "Amber Lantern",
+  );
+
+  /// UUIDs for ESP32 control (default matches 0xFFFF service / 0xFF01 + 0xFF02 chars).
   static final ValueNotifier<String> volumeServiceUuid =
       ValueNotifier<String>("0000FFFF-0000-1000-8000-00805F9B34FB");
   static final ValueNotifier<String> volumeCharUuid =
       ValueNotifier<String>("0000FF01-0000-1000-8000-00805F9B34FB");
+  static final ValueNotifier<String> metadataCharUuid =
+      ValueNotifier<String>("0000FF02-0000-1000-8000-00805F9B34FB");
 }
 
 class RememberedDevice {
@@ -391,6 +405,46 @@ class HomePage extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   _statusLine(
+                    "Battery:",
+                    ValueListenableBuilder<double>(
+                      valueListenable: AppState.battery,
+                      builder: (_, v, __) => Text(
+                        v.round().toString(),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _statusLine(
+                    "Audio Output:",
+                    ValueListenableBuilder<String>(
+                      valueListenable: AppState.bleAddress,
+                      builder: (_, address, __) {
+                        return ValueListenableBuilder<String?>(
+                          valueListenable: AppState.audioOutputDeviceName,
+                          builder: (_, name, __) {
+                            final label = address.isEmpty
+                                ? "Not selected"
+                                : (name == null || name.isEmpty)
+                                    ? address
+                                    : "$name — $address";
+                            return Text(
+                              label,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.white,
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _statusLine(
                     "Remembered:",
                     ValueListenableBuilder<List<RememberedDevice>>(
                       valueListenable: AppState.rememberedDevices,
@@ -440,12 +494,22 @@ class _FilteredBluetoothPageState extends State<FilteredBluetoothPage> {
   final List<BleDevice> _found = <BleDevice>[];
   StreamSubscription? _scanTimeoutSub;
 
+  bool _hasDisplayName(BleDevice device) {
+    final name = device.name;
+    return name != null && name.trim().isNotEmpty && name.trim() != "Unnamed";
+  }
+
   @override
   void initState() {
     super.initState();
 
     UniversalBle.onScanResult = (BleDevice device) {
       if (!mounted) return;
+
+      if (!_hasDisplayName(device)) {
+        _touchRemembered(device.deviceId, device.name ?? "Unnamed");
+        return;
+      }
 
       if (!widget.config.shouldShow(device)) return;
 
@@ -520,6 +584,7 @@ class _FilteredBluetoothPageState extends State<FilteredBluetoothPage> {
 
     try {
       await UniversalBle.startScan();
+      // Auto-stop after 10 seconds so scans do not run indefinitely.
       _scanTimeoutSub?.cancel();
       _scanTimeoutSub = Stream<void>.periodic(const Duration(seconds: 10))
           .take(1)
@@ -536,7 +601,9 @@ class _FilteredBluetoothPageState extends State<FilteredBluetoothPage> {
   Future<void> _stopScan() async {
     try {
       await UniversalBle.stopScan();
-    } catch (_) {}
+    } catch (_) {
+      // ignore
+    }
     if (mounted) setState(() => _scanning = false);
   }
 
@@ -918,17 +985,307 @@ class ConnectVocalPointPage extends StatelessWidget {
   }
 }
 
+class AudioOutputSelectionPage extends StatefulWidget {
+  const AudioOutputSelectionPage({super.key});
+
+  @override
+  State<AudioOutputSelectionPage> createState() =>
+      _AudioOutputSelectionPageState();
+}
+
+class _AudioOutputSelectionPageState extends State<AudioOutputSelectionPage> {
+  bool _scanning = false;
+  final List<BleDevice> _found = <BleDevice>[];
+  StreamSubscription? _scanTimeoutSub;
+
+  bool _isSelectableAudioOutput(BleDevice device) {
+    return _isNamedDevice(device) && !_isVocalPointDevice(device);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    UniversalBle.onScanResult = (BleDevice device) {
+      if (!mounted || !_isSelectableAudioOutput(device)) return;
+
+      final idx = _found.indexWhere((d) => d.deviceId == device.deviceId);
+      if (idx == -1) {
+        setState(() => _found.add(device));
+      } else {
+        setState(() => _found[idx] = device);
+      }
+    };
+  }
+
+  @override
+  void dispose() {
+    _scanTimeoutSub?.cancel();
+    if (_scanning) {
+      UniversalBle.stopScan();
+    }
+    UniversalBle.onScanResult = null;
+    super.dispose();
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _startScan() async {
+    setState(() {
+      _found.clear();
+      _scanning = true;
+    });
+
+    try {
+      await UniversalBle.startScan();
+      _scanTimeoutSub?.cancel();
+      _scanTimeoutSub = Stream<void>.periodic(const Duration(seconds: 10))
+          .take(1)
+          .listen((_) => _stopScan());
+    } on PlatformException catch (e) {
+      _snack("Scan failed: ${e.code} — ${e.message ?? ''}");
+      setState(() => _scanning = false);
+    } catch (e) {
+      _snack("Scan failed: $e");
+      setState(() => _scanning = false);
+    }
+  }
+
+  Future<void> _stopScan() async {
+    try {
+      await UniversalBle.stopScan();
+    } catch (_) {
+      // ignore
+    }
+    if (mounted) setState(() => _scanning = false);
+  }
+
+  void _selectOutput(BleDevice device) {
+    final name = (device.name == null || device.name!.trim().isEmpty)
+        ? device.deviceId
+        : device.name!.trim();
+    AppState.bleAddress.value = device.deviceId;
+    AppState.audioOutputDeviceName.value = name;
+    AppState.param1.value = name;
+    _snack("Selected audio output: $name");
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("Connect to Listening Device"),
+        actions: const [HomeButton()],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.charcoal,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.peach,
+                        foregroundColor: AppColors.black,
+                      ),
+                      icon: _scanning
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.black,
+                              ),
+                            )
+                          : const Icon(Icons.search),
+                      label: Text(_scanning ? "Scanning..." : "Scan for devices"),
+                      onPressed: _scanning ? null : _startScan,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.white,
+                      side: const BorderSide(color: AppColors.white),
+                    ),
+                    onPressed: _scanning ? _stopScan : null,
+                    child: const Text("Stop"),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            ValueListenableBuilder<String>(
+              valueListenable: AppState.bleAddress,
+              builder: (_, address, __) {
+                return ValueListenableBuilder<String?>(
+                  valueListenable: AppState.audioOutputDeviceName,
+                  builder: (_, name, __) {
+                    final selected = address.isNotEmpty;
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: selected ? AppColors.peach : Colors.white,
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(
+                          color: selected ? AppColors.peach : Colors.black12,
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            Icon(
+                              selected
+                                  ? Icons.speaker_group
+                                  : Icons.speaker_outlined,
+                              color: selected
+                                  ? AppColors.charcoal
+                                  : AppColors.coral,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                selected
+                                    ? "Selected output: ${name ?? address}"
+                                    : "No listening device selected",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: selected
+                                      ? AppColors.charcoal
+                                      : AppColors.black,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.peach,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  "Available devices",
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.black,
+                      ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: _found.isEmpty
+                  ? const _EmptyCard(
+                      text: "Tap Scan to find nearby listening devices.",
+                      icon: Icons.speaker,
+                    )
+                  : ValueListenableBuilder<String>(
+                      valueListenable: AppState.bleAddress,
+                      builder: (_, selectedAddress, __) {
+                        return Card(
+                          child: ListView.separated(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            itemCount: _found.length,
+                            separatorBuilder: (_, __) =>
+                                const Divider(height: 1),
+                            itemBuilder: (_, i) {
+                              final device = _found[i];
+                              final name = device.name?.trim() ?? device.deviceId;
+                              final isSelected =
+                                  selectedAddress == device.deviceId;
+
+                              return ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: isSelected
+                                      ? AppColors.coral
+                                      : AppColors.peach,
+                                  foregroundColor: isSelected
+                                      ? AppColors.white
+                                      : AppColors.black,
+                                  child: Icon(
+                                    isSelected
+                                        ? Icons.check_circle
+                                        : Icons.speaker,
+                                  ),
+                                ),
+                                title: Text(
+                                  name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                subtitle: Text(device.deviceId),
+                                trailing: FilledButton(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: isSelected
+                                        ? AppColors.charcoalSoft
+                                        : AppColors.coral,
+                                  ),
+                                  onPressed: isSelected
+                                      ? null
+                                      : () => _selectOutput(device),
+                                  child: Text(
+                                    isSelected ? "Selected" : "Use Output",
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.arrow_back),
+                  label: const Text("Back"),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.home),
+                  label: const Text("Home"),
+                  onPressed: () =>
+                      Navigator.of(context).popUntil((r) => r.isFirst),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class ConnectListeningDevicePage extends StatelessWidget {
   const ConnectListeningDevicePage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const FilteredBluetoothPage(
-      config: DeviceFilterConfig(
-        title: "Connect to Listening Device",
-        shouldShow: _isNamedDevice,
-      ),
-    );
+    return const AudioOutputSelectionPage();
   }
 }
 
@@ -940,12 +1297,21 @@ class VolumeControlPage extends StatefulWidget {
 }
 
 class _VolumeControlPageState extends State<VolumeControlPage> {
-  Timer? _writeDebounce;
+  static const List<String> _param2Options = <String>[
+    "Amber Lantern",
+    "Static Bloom",
+    "Copper Atlas",
+  ];
+
+  Timer? _volumeWriteDebounce;
+  Timer? _batteryWriteDebounce;
   late final TextEditingController _serviceUuidController;
-  late final TextEditingController _charUuidController;
+  late final TextEditingController _volumeCharUuidController;
+  late final TextEditingController _metadataCharUuidController;
 
   late final VoidCallback _serviceUuidListener;
-  late final VoidCallback _charUuidListener;
+  late final VoidCallback _volumeCharUuidListener;
+  late final VoidCallback _metadataCharUuidListener;
 
   @override
   void initState() {
@@ -953,8 +1319,11 @@ class _VolumeControlPageState extends State<VolumeControlPage> {
     _serviceUuidController = TextEditingController(
       text: AppState.volumeServiceUuid.value,
     );
-    _charUuidController = TextEditingController(
+    _volumeCharUuidController = TextEditingController(
       text: AppState.volumeCharUuid.value,
+    );
+    _metadataCharUuidController = TextEditingController(
+      text: AppState.metadataCharUuid.value,
     );
 
     _serviceUuidListener = () {
@@ -967,10 +1336,22 @@ class _VolumeControlPageState extends State<VolumeControlPage> {
         );
       }
     };
-    _charUuidListener = () {
+    _volumeCharUuidListener = () {
       final value = AppState.volumeCharUuid.value;
-      if (_charUuidController.text != value) {
-        _charUuidController.value = _charUuidController.value.copyWith(
+      if (_volumeCharUuidController.text != value) {
+        _volumeCharUuidController.value =
+            _volumeCharUuidController.value.copyWith(
+          text: value,
+          selection: TextSelection.collapsed(offset: value.length),
+          composing: TextRange.empty,
+        );
+      }
+    };
+    _metadataCharUuidListener = () {
+      final value = AppState.metadataCharUuid.value;
+      if (_metadataCharUuidController.text != value) {
+        _metadataCharUuidController.value =
+            _metadataCharUuidController.value.copyWith(
           text: value,
           selection: TextSelection.collapsed(offset: value.length),
           composing: TextRange.empty,
@@ -979,7 +1360,8 @@ class _VolumeControlPageState extends State<VolumeControlPage> {
     };
 
     AppState.volumeServiceUuid.addListener(_serviceUuidListener);
-    AppState.volumeCharUuid.addListener(_charUuidListener);
+    AppState.volumeCharUuid.addListener(_volumeCharUuidListener);
+    AppState.metadataCharUuid.addListener(_metadataCharUuidListener);
   }
 
   void _snack(String msg) {
@@ -987,25 +1369,46 @@ class _VolumeControlPageState extends State<VolumeControlPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  void _onVolumeChanged(double v) {
-    AppState.volume.value = v;
+  void _onVolumeChanged(double value) {
+    AppState.volume.value = value;
 
-    _writeDebounce?.cancel();
-    _writeDebounce = Timer(const Duration(milliseconds: 120), () {
+    _volumeWriteDebounce?.cancel();
+    _volumeWriteDebounce = Timer(const Duration(milliseconds: 120), () {
       _writeVolumeToDevice();
     });
   }
 
-  Future<void> _writeVolumeToDevice() async {
+  void _onBatteryChanged(double value) {
+    AppState.battery.value = value;
+
+    _batteryWriteDebounce?.cancel();
+    _batteryWriteDebounce = Timer(const Duration(milliseconds: 120), () {
+      _writeBatteryToDevice();
+    });
+  }
+
+  Future<void> _writeCharacteristic({
+    required String charUuid,
+    required Uint8List payload,
+    bool showSuccess = false,
+    bool showErrors = true,
+    String? successMessage,
+  }) async {
     final id = AppState.connectedDeviceId.value;
-    if (id == null) return;
+    if (id == null) {
+      if (showErrors) {
+        _snack("No device connected");
+      }
+      return;
+    }
 
     final serviceUuid = AppState.volumeServiceUuid.value.trim();
-    final charUuid = AppState.volumeCharUuid.value.trim();
-    if (serviceUuid.isEmpty || charUuid.isEmpty) return;
-
-    final vol = AppState.volume.value.round().clamp(0, 100);
-    final payload = Uint8List.fromList([vol]);
+    if (serviceUuid.isEmpty || charUuid.trim().isEmpty) {
+      if (showErrors) {
+        _snack("Service/characteristic UUID is missing");
+      }
+      return;
+    }
 
     try {
       await UniversalBle.writeValue(
@@ -1015,19 +1418,240 @@ class _VolumeControlPageState extends State<VolumeControlPage> {
         payload,
         BleOutputProperty.withResponse,
       );
+      if (showSuccess && successMessage != null) {
+        _snack(successMessage);
+      }
     } catch (e) {
-      AppState.clearConnection();
-      _snack("Write failed, device may be disconnected: $e");
+      if (showErrors) {
+        _snack("Write failed: $e");
+      }
     }
+  }
+
+  Future<void> _writeVolumeToDevice({bool showSuccess = false}) async {
+    final volume = AppState.volume.value.round().clamp(0, 100);
+    await _writeCharacteristic(
+      charUuid: AppState.volumeCharUuid.value.trim(),
+      payload: Uint8List.fromList(<int>[volume]),
+      showSuccess: showSuccess,
+      showErrors: showSuccess,
+      successMessage: "Sent volume=$volume",
+    );
+  }
+
+  Future<void> _writeBatteryToDevice({bool showSuccess = false}) async {
+    final battery = AppState.battery.value.round().clamp(0, 100);
+    await _writeMetadataToken(
+      "BATTERY=$battery",
+      showSuccess: showSuccess,
+      successMessage: "Sent BATTERY=$battery",
+    );
+  }
+
+  Future<void> _writeMetadataToken(
+    String token, {
+    bool showSuccess = true,
+    String? successMessage,
+  }) async {
+    await _writeCharacteristic(
+      charUuid: AppState.metadataCharUuid.value.trim(),
+      payload: Uint8List.fromList(utf8.encode(token)),
+      showSuccess: showSuccess,
+      showErrors: true,
+      successMessage: successMessage ?? "Sent $token",
+    );
+  }
+
+  Future<void> _sendBleAddress() async {
+    final address = AppState.bleAddress.value;
+    final outputName = AppState.audioOutputDeviceName.value?.trim() ?? "";
+    if (address.isEmpty) {
+      _snack("Select a listening device first");
+      return;
+    }
+    if (outputName.isEmpty) {
+      _snack("Selected output is missing a device name");
+      return;
+    }
+    await _writeMetadataToken("BLE_ADDR=$address", showSuccess: false);
+    await _writeMetadataToken("PARAM1=$outputName", showSuccess: false);
+    _snack("Sent BLE_ADDR and PARAM1 from selected output");
+  }
+
+  Future<void> _sendParam2(String value) async {
+    AppState.param2.value = value;
+    await _writeMetadataToken(
+      "PARAM2=$value",
+      successMessage: "Sent PARAM2=$value",
+    );
+  }
+
+  Widget _buildSliderPanel({
+    required String title,
+    required ValueNotifier<double> notifier,
+    required ValueChanged<double> onChanged,
+    required VoidCallback onSendPressed,
+    required Color accent,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.charcoal,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: AppColors.white),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.white,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: onSendPressed,
+                child: const Text("Send now"),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ValueListenableBuilder<double>(
+            valueListenable: notifier,
+            builder: (_, value, __) {
+              return Card(
+                color: Colors.white,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text("0"),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: accent,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              value.round().toString(),
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.white,
+                              ),
+                            ),
+                          ),
+                          const Text("100"),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          activeTrackColor: accent,
+                          inactiveTrackColor: accent.withValues(alpha: 0.25),
+                          thumbColor: accent,
+                          overlayColor: accent.withValues(alpha: 0.15),
+                          trackHeight: 6,
+                        ),
+                        child: Slider(
+                          value: value,
+                          min: 0,
+                          max: 100,
+                          divisions: 100,
+                          label: value.round().toString(),
+                          onChanged: onChanged,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOptionPanel({
+    required String title,
+    required String subtitle,
+    required ValueNotifier<String> notifier,
+    required Color accent,
+    required List<Widget> actions,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.charcoal,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: ValueListenableBuilder<String>(
+        valueListenable: notifier,
+        builder: (_, value, __) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: accent,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.black,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                subtitle,
+                style: const TextStyle(color: AppColors.textMuted),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                "Current: ${value.isEmpty ? 'Not selected' : value}",
+                style: const TextStyle(
+                  color: AppColors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Wrap(spacing: 10, runSpacing: 10, children: actions),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   @override
   void dispose() {
-    _writeDebounce?.cancel();
+    _volumeWriteDebounce?.cancel();
+    _batteryWriteDebounce?.cancel();
     AppState.volumeServiceUuid.removeListener(_serviceUuidListener);
-    AppState.volumeCharUuid.removeListener(_charUuidListener);
+    AppState.volumeCharUuid.removeListener(_volumeCharUuidListener);
+    AppState.metadataCharUuid.removeListener(_metadataCharUuidListener);
     _serviceUuidController.dispose();
-    _charUuidController.dispose();
+    _volumeCharUuidController.dispose();
+    _metadataCharUuidController.dispose();
     super.dispose();
   }
 
@@ -1037,13 +1661,12 @@ class _VolumeControlPageState extends State<VolumeControlPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Volume Control"),
+        title: const Text("Device Control"),
         actions: const [HomeButton()],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: ListView(
           children: [
             ValueListenableBuilder<String?>(
               valueListenable: AppState.connectedDeviceId,
@@ -1073,7 +1696,7 @@ class _VolumeControlPageState extends State<VolumeControlPage> {
                             Expanded(
                               child: Text(
                                 id == null
-                                    ? "Not connected — slider only changes local UI"
+                                    ? "Not connected — controls only change local UI"
                                     : "Connected: ${name ?? 'Unnamed'}",
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w700,
@@ -1081,9 +1704,21 @@ class _VolumeControlPageState extends State<VolumeControlPage> {
                               ),
                             ),
                             if (id != null)
-                              TextButton(
-                                onPressed: _writeVolumeToDevice,
-                                child: const Text("Send now"),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        _writeVolumeToDevice(showSuccess: true),
+                                    child: const Text("Send Volume"),
+                                  ),
+                                  TextButton(
+                                    onPressed: () =>
+                                        _writeBatteryToDevice(showSuccess: true),
+                                    child: const Text("Send Battery"),
+                                  ),
+                                ],
                               ),
                           ],
                         ),
@@ -1094,86 +1729,74 @@ class _VolumeControlPageState extends State<VolumeControlPage> {
               },
             ),
             const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: AppColors.charcoal,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Column(
-                children: [
-                  const Text(
-                    "Adjust volume",
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.white,
+            _buildSliderPanel(
+              title: "Volume",
+              notifier: AppState.volume,
+              onChanged: _onVolumeChanged,
+              onSendPressed: () => _writeVolumeToDevice(showSuccess: true),
+              accent: AppColors.coral,
+              icon: Icons.volume_up,
+            ),
+            const SizedBox(height: 16),
+            _buildSliderPanel(
+              title: "Battery",
+              notifier: AppState.battery,
+              onChanged: _onBatteryChanged,
+              onSendPressed: () => _writeBatteryToDevice(showSuccess: true),
+              accent: AppColors.peach,
+              icon: Icons.battery_full,
+            ),
+            const SizedBox(height: 16),
+            _buildOptionPanel(
+              title: "BLE Address",
+              subtitle:
+                  "Uses the selected listening device and sends its address as BLE_ADDR plus its name as PARAM1.",
+              notifier: AppState.bleAddress,
+              accent: AppColors.yellow,
+              actions: [
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.hearing),
+                  label: const Text("Select Listening Device"),
+                  onPressed: () =>
+                      Navigator.pushNamed(context, '/connect-listening-device'),
+                ),
+                FilledButton.icon(
+                  icon: const Icon(Icons.bluetooth_audio),
+                  label: const Text("Send BLE_ADDR"),
+                  onPressed: _sendBleAddress,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildOptionPanel(
+              title: "Param 1",
+              subtitle:
+                  "Automatically mirrors the selected listening device name and is sent together with BLE_ADDR.",
+              notifier: AppState.param1,
+              accent: AppColors.peach,
+              actions: [
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.hearing),
+                  label: const Text("Select Listening Device"),
+                  onPressed: () =>
+                      Navigator.pushNamed(context, '/connect-listening-device'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildOptionPanel(
+              title: "Param 2",
+              subtitle: "Select one metadata option to send as PARAM2.",
+              notifier: AppState.param2,
+              accent: AppColors.coral,
+              actions: _param2Options
+                  .map(
+                    (value) => FilledButton(
+                      onPressed: () => _sendParam2(value),
+                      child: Text(value),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  ValueListenableBuilder<double>(
-                    valueListenable: AppState.volume,
-                    builder: (_, v, __) {
-                      return Card(
-                        color: Colors.white,
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text("0"),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.coral,
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Text(
-                                      v.round().toString(),
-                                      style: const TextStyle(
-                                        fontSize: 24,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.white,
-                                      ),
-                                    ),
-                                  ),
-                                  const Text("100"),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              SliderTheme(
-                                data: SliderTheme.of(context).copyWith(
-                                  activeTrackColor: AppColors.peach,
-                                  inactiveTrackColor:
-                                      AppColors.yellow.withOpacity(0.35),
-                                  thumbColor: AppColors.coral,
-                                  overlayColor:
-                                      AppColors.coral.withOpacity(0.15),
-                                  trackHeight: 6,
-                                ),
-                                child: Slider(
-                                  value: v,
-                                  min: 0,
-                                  max: 100,
-                                  divisions: 100,
-                                  label: v.round().toString(),
-                                  onChanged: _onVolumeChanged,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
+                  )
+                  .toList(),
             ),
             const SizedBox(height: 16),
             Container(
@@ -1192,7 +1815,7 @@ class _VolumeControlPageState extends State<VolumeControlPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              "Paste your custom service/characteristic later",
+              "Control service plus separate volume and metadata characteristics.",
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: AppColors.charcoalSoft,
                   ),
@@ -1204,18 +1827,27 @@ class _VolumeControlPageState extends State<VolumeControlPage> {
               ),
               style: uuidStyle,
               controller: _serviceUuidController,
-              onChanged: (v) => AppState.volumeServiceUuid.value = v,
+              onChanged: (value) => AppState.volumeServiceUuid.value = value,
             ),
             const SizedBox(height: 10),
             TextField(
               decoration: const InputDecoration(
-                labelText: "Characteristic UUID",
+                labelText: "Volume Characteristic UUID (FF01)",
               ),
               style: uuidStyle,
-              controller: _charUuidController,
-              onChanged: (v) => AppState.volumeCharUuid.value = v,
+              controller: _volumeCharUuidController,
+              onChanged: (value) => AppState.volumeCharUuid.value = value,
             ),
-            const Spacer(),
+            const SizedBox(height: 10),
+            TextField(
+              decoration: const InputDecoration(
+                labelText: "Metadata Characteristic UUID (FF02)",
+              ),
+              style: uuidStyle,
+              controller: _metadataCharUuidController,
+              onChanged: (value) => AppState.metadataCharUuid.value = value,
+            ),
+            const SizedBox(height: 24),
             Row(
               children: [
                 OutlinedButton.icon(
@@ -1322,11 +1954,11 @@ class _EmptyCard extends StatelessWidget {
 }
 
 bool _isVocalPointDevice(BleDevice device) {
-  final name = device.name?.trim() ?? "";
-  return name.toLowerCase() == "vocalpoint";
+  final name = device.name?.trim().toLowerCase() ?? "";
+  return name.contains("vocalpoint");
 }
 
 bool _isNamedDevice(BleDevice device) {
   final name = device.name?.trim() ?? "";
-  return name.isNotEmpty;
+  return name.isNotEmpty && name != "Unnamed";
 }

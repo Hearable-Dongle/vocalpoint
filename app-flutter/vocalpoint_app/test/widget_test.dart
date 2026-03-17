@@ -8,18 +8,19 @@ void main() {
       (WidgetTester tester) async {
     await tester.pumpWidget(const MyApp());
 
-    expect(find.text('Home'), findsOneWidget);
-    expect(find.text('Bluetooth Setup'), findsOneWidget);
-    expect(find.text('Volume Control'), findsOneWidget);
+    expect(find.text('VocalPoint'), findsOneWidget);
+    expect(find.text('Listening Device'), findsOneWidget);
+    expect(find.text('Volume'), findsOneWidget);
   });
 
-  testWidgets('Bluetooth setup page opens from Home',
+  testWidgets('Listening device page opens from Home',
       (WidgetTester tester) async {
     await tester.pumpWidget(const MyApp());
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Bluetooth Setup'));
+    await tester.tap(find.byIcon(Icons.hearing));
     await tester.pumpAndSettle();
 
+    expect(find.text('Connect to Listening Device'), findsOneWidget);
     expect(find.text('Scan for devices'), findsOneWidget);
-    expect(find.text('Found devices'), findsOneWidget);
+    expect(find.text('Available devices'), findsOneWidget);
   });
 }
