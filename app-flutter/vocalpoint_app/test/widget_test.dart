@@ -1,26 +1,47 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
 
 import 'package:vocalpoint_app/main.dart';
 
 void main() {
-  testWidgets('Home page renders navigation entry points',
-      (WidgetTester tester) async {
+  testWidgets('setup flow is shown after splash', (WidgetTester tester) async {
     await tester.pumpWidget(const MyApp());
-
-    expect(find.text('VocalPoint'), findsOneWidget);
-    expect(find.text('Listening Device'), findsOneWidget);
-    expect(find.text('Volume'), findsOneWidget);
-  });
-
-  testWidgets('Listening device page opens from Home',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(const MyApp());
-    await tester.tap(find.byIcon(Icons.hearing));
+    await tester.pump(const Duration(milliseconds: 1300));
     await tester.pumpAndSettle();
 
-    expect(find.text('Connect to Listening Device'), findsOneWidget);
-    expect(find.text('Scan for devices'), findsOneWidget);
-    expect(find.text('Available devices'), findsOneWidget);
+    expect(find.text('VocalPoint'), findsAtLeastNWidgets(1));
+    expect(find.text('Output Device'), findsOneWidget);
+    expect(find.text('Skip'), findsOneWidget);
+  });
+
+  testWidgets('connection controls expand inline', (WidgetTester tester) async {
+    await tester.pumpWidget(const MyApp());
+    await tester.pump(const Duration(milliseconds: 1300));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.graphic_eq));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Scan for VocalPoint devices'), findsOneWidget);
+    expect(find.text('No device selected'), findsOneWidget);
+    expect(
+      find.text('No devices yet. Start a scan to populate this list.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('skip enters dashboard without connected devices', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const MyApp());
+    await tester.pump(const Duration(milliseconds: 1300));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Skip'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('VocalPoint offline'), findsOneWidget);
+    expect(find.text('Output missing'), findsOneWidget);
+    expect(find.text('Close'), findsOneWidget);
   });
 }

@@ -61,7 +61,8 @@ flutter:
   # the material Icons class.
   uses-material-design: true
   assets:
-    - assets/Squiggly.svg
+    - assets/Good_Pic_Two.jpg
+    - assets/Squiggly-cropped.svg
 
   # To add assets to your application, add an assets section, like this:
   # assets:
