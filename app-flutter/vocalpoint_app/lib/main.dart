@@ -15,12 +15,12 @@ class AppColors {
   static const Color panel = Color(0xFF0F1012);
   static const Color panelSoft = Color(0xFF16181C);
   static const Color glass = Color(0x66FFFFFF);
-  static const Color glassWarm = Color(0x33E3B545);
+  static const Color glassWarm = Color(0x33FF9F1C);
   static const Color outline = Color(0x33FFFFFF);
   static const Color shadow = Color(0x99000000);
 
-  static const Color gold = Color(0xFFE3B545);
-  static const Color goldBright = Color(0xFFF4D16D);
+  static const Color gold = Color(0xFFFF9F1C);
+  static const Color goldBright = Color(0xFFFFB54D);
   static const Color white = Colors.white;
   static const Color muted = Color(0xFFB0B5BD);
   static const Color mutedSoft = Color(0xFF7E838C);
@@ -179,16 +179,20 @@ class VocalPointShell extends StatefulWidget {
 }
 
 class _VocalPointShellState extends State<VocalPointShell> {
+  static const Duration _panelAnimationDuration = Duration(milliseconds: 480);
+  static const Duration _panelIconAnimationDuration = Duration(
+    milliseconds: 420,
+  );
   static const List<String> _param2Options = <String>[
     'Amber Lantern',
     'Static Bloom',
     'Copper Atlas',
   ];
   static const List<Color> _highlightOptions = <Color>[
-    Color(0xFFE3B545),
     Color(0xFFFF9F1C),
     Color(0xFFFF7A1A),
     Color(0xFFE76F51),
+    Color(0xFFE3B545),
   ];
 
   final List<BleDevice> _vocalPointResults = <BleDevice>[];
@@ -202,13 +206,14 @@ class _VocalPointShellState extends State<VocalPointShell> {
   late final VoidCallback _metadataCharUuidListener;
 
   Timer? _splashStartTimer;
+  Timer? _splashFadeTimer;
   Timer? _splashEndTimer;
   Timer? _dashboardTimer;
   Timer? _scanTimeoutTimer;
   Timer? _volumeWriteDebounce;
 
   bool _showSplashOverlay = true;
-  bool _expandSplashLogo = false;
+  bool _fadeSplashOverlay = false;
   bool _dashboardUnlocked = false;
   bool _isScanning = false;
 
@@ -262,6 +267,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
   @override
   void dispose() {
     _splashStartTimer?.cancel();
+    _splashFadeTimer?.cancel();
     _splashEndTimer?.cancel();
     _dashboardTimer?.cancel();
     _scanTimeoutTimer?.cancel();
@@ -298,12 +304,12 @@ class _VocalPointShellState extends State<VocalPointShell> {
   }
 
   void _startSplashSequence() {
-    _splashStartTimer = Timer(const Duration(milliseconds: 900), () {
+    _splashFadeTimer = Timer(const Duration(milliseconds: 520), () {
       if (!mounted) return;
-      setState(() => _expandSplashLogo = true);
+      setState(() => _fadeSplashOverlay = true);
     });
 
-    _splashEndTimer = Timer(const Duration(milliseconds: 1500), () {
+    _splashEndTimer = Timer(const Duration(milliseconds: 820), () {
       if (!mounted) return;
       setState(() => _showSplashOverlay = false);
     });
@@ -937,26 +943,19 @@ class _VocalPointShellState extends State<VocalPointShell> {
     return Positioned.fill(
       child: IgnorePointer(
         child: AnimatedOpacity(
-          opacity: _showSplashOverlay ? 1 : 0,
-          duration: const Duration(milliseconds: 260),
+          opacity: _fadeSplashOverlay ? 0 : 1,
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic,
           child: Container(
             color: Colors.black,
             alignment: Alignment.center,
-            child: TweenAnimationBuilder<double>(
-              tween: Tween<double>(begin: 1, end: _expandSplashLogo ? 18 : 1),
-              duration: const Duration(milliseconds: 700),
-              curve: Curves.easeInCubic,
-              builder: (context, value, child) {
-                return Transform.scale(scale: value, child: child);
-              },
-              child: SvgPicture.asset(
-                'assets/Squiggly-cropped.svg',
-                width: 84,
-                height: 84,
-                colorFilter: const ColorFilter.mode(
-                  AppColors.white,
-                  BlendMode.srcIn,
-                ),
+            child: SvgPicture.asset(
+              'assets/Squiggly-cropped.svg',
+              width: 84,
+              height: 84,
+              colorFilter: const ColorFilter.mode(
+                AppColors.white,
+                BlendMode.srcIn,
               ),
             ),
           ),
@@ -982,7 +981,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _buildTopBar(),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 88),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(6, 0, 6, 20),
                         child: Column(
@@ -1001,7 +1000,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
                                       _buildConnectionPanel(
                                         SetupPanel.vocalPoint,
                                       ),
-                                      const SizedBox(height: 14),
+                                      const SizedBox(height: 34),
                                       _buildConnectionPanel(SetupPanel.output),
                                     ],
                                   );
@@ -1015,7 +1014,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
                                         SetupPanel.vocalPoint,
                                       ),
                                     ),
-                                    const SizedBox(width: 14),
+                                    const SizedBox(width: 22),
                                     Expanded(
                                       child: _buildConnectionPanel(
                                         SetupPanel.output,
@@ -1051,35 +1050,39 @@ class _VocalPointShellState extends State<VocalPointShell> {
                             ),
                             if (_dashboardUnlocked) ...[
                               const SizedBox(height: 18),
-                              Wrap(
-                                spacing: 10,
-                                runSpacing: 10,
-                                children: [
-                                  _StatusChip(
-                                    label: _hasConnectedVocalPoint
-                                        ? 'VocalPoint linked'
-                                        : 'VocalPoint offline',
-                                    color: _hasConnectedVocalPoint
-                                        ? AppColors.success
-                                        : AppColors.danger,
-                                    icon: _hasConnectedVocalPoint
-                                        ? Icons.check_circle
-                                        : Icons.bluetooth_disabled,
-                                  ),
-                                  _StatusChip(
-                                    label: _hasSelectedOutputDevice
-                                        ? 'Output selected'
-                                        : 'Output missing',
-                                    color: _hasSelectedOutputDevice
-                                        ? AppColors.success
-                                        : AppColors.danger,
-                                    icon: _hasSelectedOutputDevice
-                                        ? Icons.headphones
-                                        : Icons.portable_wifi_off,
-                                  ),
-                                ],
+                              Align(
+                                alignment: Alignment.center,
+                                child: Wrap(
+                                  alignment: WrapAlignment.center,
+                                  spacing: 10,
+                                  runSpacing: 10,
+                                  children: [
+                                    _StatusChip(
+                                      label: _hasConnectedVocalPoint
+                                          ? 'VocalPoint linked'
+                                          : 'VocalPoint offline',
+                                      color: _hasConnectedVocalPoint
+                                          ? AppColors.success
+                                          : AppColors.danger,
+                                      icon: _hasConnectedVocalPoint
+                                          ? Icons.check_circle
+                                          : Icons.bluetooth_disabled,
+                                    ),
+                                    _StatusChip(
+                                      label: _hasSelectedOutputDevice
+                                          ? 'Output selected'
+                                          : 'Output missing',
+                                      color: _hasSelectedOutputDevice
+                                          ? AppColors.success
+                                          : AppColors.danger,
+                                      icon: _hasSelectedOutputDevice
+                                          ? Icons.headphones
+                                          : Icons.portable_wifi_off,
+                                    ),
+                                  ],
+                                ),
                               ),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 52),
                               LayoutBuilder(
                                 builder: (context, constraints) {
                                   final wide = constraints.maxWidth >= 620;
@@ -1089,7 +1092,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
                                           CrossAxisAlignment.stretch,
                                       children: [
                                         _buildVolumeCard(context),
-                                        const SizedBox(height: 10),
+                                        const SizedBox(height: 34),
                                         _buildVoiceMixCard(context),
                                       ],
                                     );
@@ -1102,7 +1105,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
                                       Expanded(
                                         child: _buildVolumeCard(context),
                                       ),
-                                      const SizedBox(width: 10),
+                                      const SizedBox(width: 22),
                                       Expanded(
                                         child: _buildVoiceMixCard(context),
                                       ),
@@ -1209,9 +1212,9 @@ class _VocalPointShellState extends State<VocalPointShell> {
   Widget _buildConnectionPanel(SetupPanel panel) {
     final accent = _highlightColor;
     final compact = MediaQuery.sizeOf(context).width < 390;
-    final circleSize = compact ? 108.0 : 132.0;
-    final loaderSize = compact ? 92.0 : 112.0;
-    final iconSize = compact ? 54.0 : 68.0;
+    final circleSize = compact ? 92.0 : 114.0;
+    final loaderSize = compact ? 76.0 : 94.0;
+    final iconSize = compact ? 44.0 : 58.0;
     final labelFontSize = compact ? 13.0 : 15.0;
     final isVocalPoint = panel == SetupPanel.vocalPoint;
     final isExpanded = _expandedPanel == panel;
@@ -1222,9 +1225,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
     final isConnecting = isVocalPoint
         ? _pendingVocalPointId != null
         : _pendingOutputId != null;
-    final title = isVocalPoint
-        ? 'Connect to Vocal Point'
-        : 'Connect to Output Device';
+    final title = isVocalPoint ? 'VocalPoint' : 'Output Device';
     final connectionLabel = isConnected
         ? (isVocalPoint
               ? (AppState.connectedDeviceName.value ?? 'Connected')
@@ -1238,11 +1239,11 @@ class _VocalPointShellState extends State<VocalPointShell> {
     final results = isVocalPoint ? _vocalPointResults : _outputResults;
 
     return AnimatedSize(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
+      duration: _panelAnimationDuration,
+      curve: Curves.easeInOutCubicEmphasized,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutCubic,
+        duration: _panelAnimationDuration,
+        curve: Curves.easeInOutCubicEmphasized,
         padding: isExpanded
             ? EdgeInsets.fromLTRB(
                 compact ? 10 : 14,
@@ -1279,8 +1280,8 @@ class _VocalPointShellState extends State<VocalPointShell> {
                   GestureDetector(
                     onTap: () => _openPanel(panel),
                     child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 350),
-                      curve: Curves.easeOutCubic,
+                      duration: _panelIconAnimationDuration,
+                      curve: Curves.easeInOutCubicEmphasized,
                       width: circleSize,
                       height: circleSize,
                       decoration: BoxDecoration(
@@ -1595,14 +1596,6 @@ class _VocalPointShellState extends State<VocalPointShell> {
                     fontSize: 15,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  device.deviceId,
-                  style: const TextStyle(
-                    color: AppColors.mutedSoft,
-                    fontSize: 12.5,
-                  ),
-                ),
               ],
             ),
           ),
@@ -1656,7 +1649,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
                   'Write direct volume values to the ESP32 volume characteristic.',
               accent: accentBright,
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 34),
             ValueListenableBuilder<bool>(
               valueListenable: AppState.isMuted,
               builder: (context, muted, _) {
@@ -1666,24 +1659,39 @@ class _VocalPointShellState extends State<VocalPointShell> {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            _MetricChip(
-                              label: 'Volume ${volume.round()}',
-                              icon: Icons.tune,
-                              accent: accentBright,
-                            ),
-                            const SizedBox(width: 10),
-                            _MetricChip(
-                              label: muted ? 'Muted' : 'Live',
-                              icon: muted ? Icons.volume_off : Icons.volume_up,
-                              accent: muted
-                                  ? AppColors.danger
-                                  : AppColors.success,
-                            ),
-                          ],
+                        _MetricChip(
+                          label: muted ? 'Muted' : 'Live',
+                          icon: muted ? Icons.volume_off : Icons.volume_up,
+                          accent: muted ? AppColors.danger : AppColors.success,
                         ),
                         const SizedBox(height: 18),
+                        Center(
+                          child: Column(
+                            children: [
+                              Text(
+                                '${volume.round()}',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 36,
+                                  fontWeight: FontWeight.w800,
+                                  color: accentBright,
+                                  height: 1,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Volume',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: AppColors.mutedSoft,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
                         SliderTheme(
                           data: SliderTheme.of(context).copyWith(
                             activeTrackColor: accent,
@@ -1785,7 +1793,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
                   'Dummy control surface for prioritising different voices. PARAM2 still maps to the existing metadata token.',
               accent: accentBright,
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 34),
             ..._param2Options.map(
               (option) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
@@ -1818,7 +1826,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
                                   : Icons.person_2_outlined,
                               color: active ? accentBright : AppColors.muted,
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 22),
                             Expanded(
                               child: Text(
                                 option,
@@ -1856,16 +1864,16 @@ class _VocalPointShellState extends State<VocalPointShell> {
   }) {
     final accent = _highlightColor;
     final compact = MediaQuery.sizeOf(context).width < 390;
-    final circleSize = compact ? 108.0 : 132.0;
-    final iconSize = compact ? 54.0 : 68.0;
+    final circleSize = compact ? 92.0 : 114.0;
+    final iconSize = compact ? 44.0 : 58.0;
     final isExpanded = _expandedControlPanel == panel;
 
     return AnimatedSize(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
+      duration: _panelAnimationDuration,
+      curve: Curves.easeInOutCubicEmphasized,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutCubic,
+        duration: _panelAnimationDuration,
+        curve: Curves.easeInOutCubicEmphasized,
         padding: isExpanded
             ? EdgeInsets.fromLTRB(
                 compact ? 10 : 14,
@@ -1900,8 +1908,8 @@ class _VocalPointShellState extends State<VocalPointShell> {
                   GestureDetector(
                     onTap: () => _toggleControlPanel(panel),
                     child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 350),
-                      curve: Curves.easeOutCubic,
+                      duration: _panelIconAnimationDuration,
+                      curve: Curves.easeInOutCubicEmphasized,
                       width: circleSize,
                       height: circleSize,
                       decoration: BoxDecoration(
@@ -2264,6 +2272,7 @@ class _StatusChip extends StatelessWidget {
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(icon, size: 16, color: color),
           const SizedBox(width: 7),
