@@ -233,7 +233,7 @@ static int ble_gap_event_handler(struct ble_gap_event *event, void *arg)
 
                 char peer_addr[VP_BLE_ADDR_MAX_LEN];
                 ble_addr_to_string(desc.peer_id_addr.val, peer_addr, sizeof(peer_addr));
-                vp_state_set_ble_addr(peer_addr);
+                vp_state_set_ble_uuid_addr(peer_addr);
             }
 
             MODLOG_DFLT(INFO, "\n");
@@ -447,7 +447,7 @@ static void ble_on_sync(void)
     if (rc == 0) {
         char own_addr[VP_BLE_ADDR_MAX_LEN];
         ble_addr_to_string(addr_val, own_addr, sizeof(own_addr));
-        vp_state_set_ble_addr(own_addr);
+        vp_state_set_ble_uuid_addr(own_addr);
 
         MODLOG_DFLT(INFO, "Device Address: ");
         print_addr(addr_val);

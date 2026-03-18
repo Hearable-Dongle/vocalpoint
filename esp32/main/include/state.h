@@ -22,44 +22,39 @@
 extern "C" {
 #endif
 
-#define VP_MAGIC_BIT_LEN        1
-#define VP_FRAME_VERSION_LEN    1
-#define VP_SEQ_MAX_LEN          4
-#define VP_VOLUME_LEN           1
-#define VP_BATTERY_LEN          1
-#define VP_BLE_ADDR_MAX_LEN     40
-#define VP_PARAM_MAX_LEN        32
-#define VP_VOICE_PROFILE_NAME_MAX_LEN 28
-#define VP_CRC16_LEN            2
+#define VP_MAGIC_BIT_LEN                  1
+#define VP_FRAME_VERSION_LEN              1
+#define VP_SEQ_MAX_LEN                    4
+#define VP_VOLUME_LEN                     1
+#define VP_VOICE_PROFILE_NUM_LEN          1
+#define VP_BLE_ADDR_MAX_LEN               40
+#define VP_PARAM_MAX_LEN                  32
+#define VP_VOICE_PROFILE_NAME_NUM_LEN     1
+#define VP_VOICE_PROFILE_NAME_MAX_LEN     28
+#define VP_MAX_VOICE_PROFILES             16
+#define VP_CRC16_LEN                      2
 
 #define VP_FRAME_MAGIC          0xA5
 #define VP_FRAME_VERSION        0x01
 
-// Currently total size is 92 bytes
+// Current total size is 173 bytes before CRC, 175 bytes including CRC.
 #define VP_I2C_FRAME_SIZE (VP_MAGIC_BIT_LEN + VP_FRAME_VERSION_LEN + VP_SEQ_MAX_LEN + VP_VOLUME_LEN + \
-                           VP_BATTERY_LEN + VP_BLE_ADDR_MAX_LEN + VP_PARAM_MAX_LEN + VP_PARAM_MAX_LEN + \
-                           VP_CRC16_LEN)
+                           VP_VOICE_PROFILE_NUM_LEN + VP_BLE_ADDR_MAX_LEN + VP_PARAM_MAX_LEN + \
+                           VP_PARAM_MAX_LEN + VP_PARAM_MAX_LEN + VP_VOICE_PROFILE_NAME_NUM_LEN + \
+                           VP_VOICE_PROFILE_NAME_MAX_LEN + VP_CRC16_LEN)
 
 typedef struct {
     uint32_t seq;
     uint8_t volume;
-    uint8_t battery;
-    char ble_addr[VP_BLE_ADDR_MAX_LEN];
-    char param1[VP_PARAM_MAX_LEN];
-    char param2[VP_PARAM_MAX_LEN];
+    uint8_t voice_profile_num;
+    char ble_uuid_addr[VP_BLE_ADDR_MAX_LEN];
+    char audio_out_name[VP_PARAM_MAX_LEN];
+    char wifi_ssid[VP_PARAM_MAX_LEN];
+    char wifi_pwd[VP_PARAM_MAX_LEN];
+    uint8_t voice_profile_name_num;
     char voice_profile_name[VP_VOICE_PROFILE_NAME_MAX_LEN];
 } vp_state_snapshot_t;
 
-/**************************************************************************************************/
-/**
- * @name vp_state_init
- * @brief Initializes the shared BLE/I2C state store.
- *
- *
- *
- * @return int Not used.
- */
-/**************************************************************************************************/
 void vp_state_init(void);
 
 /**************************************************************************************************/
@@ -69,7 +64,6 @@ void vp_state_init(void);
  *
  * @param volume Volume percentage [0, 100].
  *
- *
  * @return int Not used.
  */
 /**************************************************************************************************/
@@ -77,34 +71,56 @@ void vp_state_set_volume(uint8_t volume);
 
 /**************************************************************************************************/
 /**
- * @name vp_state_set_battery
- * @brief Updates the current battery field in shared state.
+ * @name vp_state_set_voice_profile_number
+ * @brief Updates the selected voice profile number field in shared state.
  *
- * @param battery Battery percentage [0, 100].
- *
+ * @param voice_profile_number Voice profile number [0, 100].
  *
  * @return int Not used.
  */
 /**************************************************************************************************/
-void vp_state_set_battery(uint8_t battery);
+void vp_state_set_voice_profile_number(uint8_t voice_profile_number);
 
 /**************************************************************************************************/
 /**
- * @name vp_state_set_ble_addr
- * @brief Updates the BLE address string in shared state.
+ * @name vp_state_set_ble_uuid_addr
+ * @brief Updates the BLE UUID/address string in shared state.
  *
  * @param addr Zero-terminated BLE address string.
  *
+ * @return int Not used.
+ */
+/**************************************************************************************************/
+void vp_state_set_ble_uuid_addr(const char *addr);
+
+/**************************************************************************************************/
+/**
+ * @name vp_state_set_audio_out_name
+ * @brief Updates the selected audio output device name string in shared state.
+ *
+ * @param value Zero-terminated string.
  *
  * @return int Not used.
  */
 /**************************************************************************************************/
-void vp_state_set_ble_addr(const char *addr);
+void vp_state_set_audio_out_name(const char *value);
 
 /**************************************************************************************************/
 /**
- * @name vp_state_set_param1
- * @brief Updates param1 string in shared state.
+ * @name vp_state_set_wifi_ssid
+ * @brief Updates the Wi-Fi SSID string in shared state.
+ *
+ * @param value Zero-terminated string.
+ *
+ * @return int Not used.
+ */
+/**************************************************************************************************/
+void vp_state_set_wifi_ssid(const char *value);
+
+/**************************************************************************************************/
+/**
+ * @name vp_state_set_wifi_pwd
+ * @brief Updates the Wi-Fi password string in shared state.
  *
  * @param value Zero-terminated string.
  *
@@ -112,32 +128,19 @@ void vp_state_set_ble_addr(const char *addr);
  * @return int Not used.
  */
 /**************************************************************************************************/
-void vp_state_set_param1(const char *value);
+void vp_state_set_wifi_pwd(const char *value);
 
 /**************************************************************************************************/
 /**
- * @name vp_state_set_param2
- * @brief Updates param2 string in shared state.
- *
- * @param value Zero-terminated string.
- *
- *
- * @return int Not used.
- */
-/**************************************************************************************************/
-void vp_state_set_param2(const char *value);
-
-/**************************************************************************************************/
-/**
- * @name vp_state_set_voice_profile_name
- * @brief Updates the latest voice profile name received from the RPi.
+ * @name vp_state_register_voice_profile_name
+ * @brief Registers or refreshes a discovered voice profile name and its assigned number.
  *
  * @param value Zero-terminated string.
  *
  * @return int Not used.
  */
 /**************************************************************************************************/
-void vp_state_set_voice_profile_name(const char *value);
+void vp_state_register_voice_profile_name(const char *value);
 
 /**************************************************************************************************/
 /**
@@ -185,7 +188,7 @@ void vp_state_update_from_ble_payload(const uint8_t *payload, uint16_t payload_l
  *
  * Bit positions match the VP_FLAG_* constants in i2c_protocol.h.
  * VP_FLAG_CHANGED (bit 0) is set whenever any field has been updated.
- * Individual parameter bits (VP_FLAG_VOL, VP_FLAG_BAT, …) reflect which
+ * Individual parameter bits (VP_FLAG_VOL, VP_FLAG_VOICE_PROFILE_NUM, …) reflect which
  * fields have changed since the last call to vp_state_clear_dirty_bits().
  *
  * @return uint32_t Current dirty flags.

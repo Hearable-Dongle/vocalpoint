@@ -28,10 +28,10 @@
 static const char *s_tag = "ble_gatt_server";
 static uint16_t s_batt_chr_handle;
 
-static int battery_access_cb(uint16_t conn_handle,
-                             uint16_t attr_handle,
-                             struct ble_gatt_access_ctxt *ctxt,
-                             void *arg)
+static int voice_profile_number_access_cb(uint16_t conn_handle,
+                                          uint16_t attr_handle,
+                                          struct ble_gatt_access_ctxt *ctxt,
+                                          void *arg)
 {
     (void)conn_handle;
     (void)attr_handle;
@@ -41,7 +41,9 @@ static int battery_access_cb(uint16_t conn_handle,
         vp_state_snapshot_t snapshot;
         vp_state_get_snapshot(&snapshot);
 
-        int rc = os_mbuf_append(ctxt->om, &snapshot.battery, sizeof(snapshot.battery));
+        int rc = os_mbuf_append(ctxt->om,
+                                &snapshot.voice_profile_num,
+                                sizeof(snapshot.voice_profile_num));
         return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
 
@@ -93,13 +95,18 @@ static int metadata_access_cb(uint16_t conn_handle,
         vp_state_snapshot_t snapshot;
         vp_state_get_snapshot(&snapshot);
 
-        char text[160];
+        char text[224];
         int len = snprintf(text,
                            sizeof(text),
-                           "P1=%s;P2=%s;VOICE=%s",
-                           snapshot.param1,
-                           snapshot.param2,
-                           snapshot.voice_profile_name);
+                           "BLE_UUID_ADDR=%s;AUDIO_OUT_NAME=%s;WIFI_SSID=%s;WIFI_PWD=%s;"
+                           "VOICE_PROFILE_NUM=%u;VOICE_PROFILE_NAME=%s;VOICE_PROFILE_NAME_NUM=%u",
+                           snapshot.ble_uuid_addr,
+                           snapshot.audio_out_name,
+                           snapshot.wifi_ssid,
+                           snapshot.wifi_pwd,
+                           snapshot.voice_profile_num,
+                           snapshot.voice_profile_name,
+                           snapshot.voice_profile_name_num);
         if (len < 0) {
             return BLE_ATT_ERR_UNLIKELY;
         }
@@ -151,7 +158,7 @@ static const struct ble_gatt_svc_def s_gatt_services[] = {
         .characteristics = (struct ble_gatt_chr_def[]) {
             {
                 .uuid = BLE_UUID16_DECLARE(0x2A19),
-                .access_cb = battery_access_cb,
+                .access_cb = voice_profile_number_access_cb,
                 .val_handle = &s_batt_chr_handle,
                 .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
             },
@@ -161,7 +168,7 @@ static const struct ble_gatt_svc_def s_gatt_services[] = {
     {0},
 };
 
-void ble_gatt_server_notify_battery(uint16_t conn_handle)
+void ble_gatt_server_notify_voice_profile_number(uint16_t conn_handle)
 {
     if (conn_handle == BLE_HS_CONN_HANDLE_NONE) {
         return;
@@ -170,7 +177,8 @@ void ble_gatt_server_notify_battery(uint16_t conn_handle)
     vp_state_snapshot_t snapshot;
     vp_state_get_snapshot(&snapshot);
 
-    struct os_mbuf *om = ble_hs_mbuf_from_flat(&snapshot.battery, sizeof(snapshot.battery));
+    struct os_mbuf *om = ble_hs_mbuf_from_flat(&snapshot.voice_profile_num,
+                                               sizeof(snapshot.voice_profile_num));
     if (om == NULL) {
         return;
     }
@@ -178,9 +186,9 @@ void ble_gatt_server_notify_battery(uint16_t conn_handle)
     ble_gatts_notify_custom(conn_handle, s_batt_chr_handle, om);
 }
 
-void ble_gatt_server_set_battery(uint8_t pct)
+void ble_gatt_server_set_voice_profile_number(uint8_t voice_profile_number)
 {
-    vp_state_set_battery(pct);
+    vp_state_set_voice_profile_number(voice_profile_number);
 }
 
 void ble_gatt_server_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg)

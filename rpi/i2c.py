@@ -25,24 +25,33 @@ from smbus2 import SMBus, i2c_msg
 
 # ── Protocol constants (must match i2c_protocol.h) ──────────────────────────
 
-VP_FLAG_CHANGED = 1 << 0
-VP_FLAG_VOL     = 1 << 2
-VP_FLAG_BAT     = 1 << 3
-VP_FLAG_ADDR    = 1 << 4
-VP_FLAG_P1      = 1 << 5
-VP_FLAG_P2      = 1 << 6
+VP_FLAG_CHANGED                 = 1 << 0
+VP_FLAG_VOL                     = 1 << 2
+VP_FLAG_VOICE_PROFILE_NUM       = 1 << 3
+VP_FLAG_BLE_UUID_ADDR           = 1 << 4
+VP_FLAG_AUDIO_OUT_NAME          = 1 << 5
+VP_FLAG_WIFI_SSID               = 1 << 6
+VP_FLAG_WIFI_PWD                = 1 << 7
 
-VP_REQ_DATA = 1 << 1
-VP_REQ_VOL  = 1 << 2
-VP_REQ_BAT  = 1 << 3
-VP_REQ_ADDR = 1 << 4
-VP_REQ_P1   = 1 << 5
-VP_REQ_P2   = 1 << 6
-VP_REQ_WRITE = 1 << 8
-VP_REQ_WRITE_VOICE_PROFILE = 1 << 9
-VP_REQ_OFFSET_SHIFT = 24
+VP_REQ_DATA                     = 1 << 1
+VP_REQ_VOL                      = 1 << 2
+VP_REQ_VOICE_PROFILE_NUM        = 1 << 3
+VP_REQ_BLE_UUID_ADDR            = 1 << 4
+VP_REQ_WRITE_AUDIO_OUT_NAME     = 1 << 5
+VP_REQ_WIFI_SSID                = 1 << 6
+VP_REQ_WIFI_PWD                 = 1 << 7
+VP_REQ_WRITE                    = 1 << 8
+VP_REQ_WRITE_VOICE_PROFILE      = 1 << 9
+VP_REQ_OFFSET_SHIFT             = 24
 
-VP_PARAM_BITS = VP_FLAG_VOL | VP_FLAG_BAT | VP_FLAG_ADDR | VP_FLAG_P1 | VP_FLAG_P2
+VP_PARAM_BITS = (
+    VP_FLAG_VOL
+    | VP_FLAG_VOICE_PROFILE_NUM
+    | VP_FLAG_BLE_UUID_ADDR
+    | VP_FLAG_AUDIO_OUT_NAME
+    | VP_FLAG_WIFI_SSID
+    | VP_FLAG_WIFI_PWD
+)
 
 VP_STATUS_LEN = 4
 VP_RESP_HDR_LEN = 4
@@ -55,25 +64,28 @@ VP_WRITE_MAILBOX_LEN = VP_RESP_MAILBOX_LEN
 
 PARAM_PAYLOAD_SIZES: dict[int, int] = {
     VP_FLAG_VOL:  1,
-    VP_FLAG_BAT:  1,
-    VP_FLAG_ADDR: 40,
-    VP_FLAG_P1:   32,
-    VP_FLAG_P2:   32,
+    VP_FLAG_VOICE_PROFILE_NUM:  1,
+    VP_FLAG_BLE_UUID_ADDR: 40,
+    VP_FLAG_AUDIO_OUT_NAME: 32,
+    VP_FLAG_WIFI_SSID:   32,
+    VP_FLAG_WIFI_PWD:    32,
 }
 
 PARAM_FLAG_TO_FIELD: dict[int, str] = {
-    VP_FLAG_VOL:  "volume",
-    VP_FLAG_BAT:  "battery",
-    VP_FLAG_ADDR: "ble_addr",
-    VP_FLAG_P1:   "param1",
-    VP_FLAG_P2:   "param2",
+    VP_FLAG_VOL:                "volume",
+    VP_FLAG_VOICE_PROFILE_NUM:  "voice_profile_num",
+    VP_FLAG_BLE_UUID_ADDR:      "ble_uuid_addr",
+    VP_FLAG_AUDIO_OUT_NAME:     "audio_out_name",
+    VP_FLAG_WIFI_SSID:          "wifi_ssid",
+    VP_FLAG_WIFI_PWD:           "wifi_pwd",
 }
 
 SETTLE_SEC = 0.020
 INTER_TRANSACTION_SEC = 0.005
 STATUS_RETRY_COUNT = 3
 PARAM_RETRY_COUNT = 3
-VOICE_WRITE_INTERVAL_SEC = 5.0
+VOICE_DUMMY_INTERVAL_SEC = 5.0
+
 VOICE_TEST_NAMES = (
     "Tegan",
     "Ryan",
@@ -82,14 +94,22 @@ VOICE_TEST_NAMES = (
     "Jenny"
 )
 
+AUDIO_OUT_TEST_NAMES = (
+    "Speaker",
+    "Headphones",
+    "AirPods",
+    "AirPods Mini",
+    "Bluetooth Speaker"
+)
 
 @dataclass
 class DeviceState:
     volume: int = 0
-    battery: int = 0
-    ble_addr: str = ""
-    param1: str = ""
-    param2: str = ""
+    voice_profile_num: int = 0
+    ble_uuid_addr: str = ""
+    audio_out_name: str = ""
+    wifi_ssid: str = ""
+    wifi_pwd: str = ""
 
 
 def _write_request(bus: SMBus, address: int, flags: int) -> None:
@@ -127,6 +147,13 @@ def write_voice_profile_name(bus: SMBus, address: int, voice_name: str) -> None:
     _write_mailbox(bus, address, VP_WRITE_MAILBOX_OFFSET, payload)
     _write_request(bus, address, VP_REQ_WRITE | VP_REQ_WRITE_VOICE_PROFILE)
 
+def write_audio_out_name(bus: SMBus, address: int, audio_out_name: str) -> None:
+    encoded = audio_out_name.encode("utf-8")[: VP_WRITE_MAILBOX_LEN - 1]
+    payload = encoded + b"\x00"
+    payload = payload.ljust(VP_WRITE_MAILBOX_LEN, b"\x00")
+
+    _write_mailbox(bus, address, VP_WRITE_MAILBOX_OFFSET, payload)
+    _write_request(bus, address, VP_REQ_WRITE | VP_REQ_WRITE_AUDIO_OUT_NAME)
 
 def read_status(bus: SMBus, address: int) -> int:
     last_err: ValueError | None = None
@@ -192,14 +219,16 @@ def _decode_string(raw: bytes) -> str:
 def apply_param(state: DeviceState, param_bit: int, raw: bytes) -> None:
     if param_bit == VP_FLAG_VOL:
         state.volume = _decode_u8(raw)
-    elif param_bit == VP_FLAG_BAT:
-        state.battery = _decode_u8(raw)
-    elif param_bit == VP_FLAG_ADDR:
-        state.ble_addr = _decode_string(raw)
-    elif param_bit == VP_FLAG_P1:
-        state.param1 = _decode_string(raw)
-    elif param_bit == VP_FLAG_P2:
-        state.param2 = _decode_string(raw)
+    elif param_bit == VP_FLAG_VOICE_PROFILE_NUM:
+        state.voice_profile_num = _decode_u8(raw)
+    elif param_bit == VP_FLAG_BLE_UUID_ADDR:
+        state.ble_uuid_addr = _decode_string(raw)
+    elif param_bit == VP_FLAG_AUDIO_OUT_NAME:
+        state.audio_out_name = _decode_string(raw)
+    elif param_bit == VP_FLAG_WIFI_SSID:
+        state.wifi_ssid = _decode_string(raw)
+    elif param_bit == VP_FLAG_WIFI_PWD:
+        state.wifi_pwd = _decode_string(raw)
 
 
 def main() -> int:
@@ -235,20 +264,25 @@ def main() -> int:
     state = DeviceState()
     last_persisted: dict[str, object] | None = None
     pending_dirty = 0
-    next_voice_write = time.monotonic()
-    next_voice_index = 0
+    next_dummy_write = time.monotonic()
+    next_dummy__index = 0
 
     with SMBus(args.bus) as bus:
         while True:
             cycle_start = time.monotonic()
             try:
                 now = time.monotonic()
-                if not args.no_voice_test and now >= next_voice_write:
-                    voice_name = VOICE_TEST_NAMES[next_voice_index % len(VOICE_TEST_NAMES)]
+                if not args.no_voice_test and now >= next_dummy_write:
+                    audio_out_name = AUDIO_OUT_TEST_NAMES[next_dummy__index % len(AUDIO_OUT_TEST_NAMES)]
+                    write_audio_out_name(bus, args.address, audio_out_name)
+                    print(f"audio_out_write='{audio_out_name}'")
+
+                    voice_name = VOICE_TEST_NAMES[next_dummy__index % len(VOICE_TEST_NAMES)]
                     write_voice_profile_name(bus, args.address, voice_name)
                     print(f"voice_write='{voice_name}'")
-                    next_voice_index += 1
-                    next_voice_write = now + VOICE_WRITE_INTERVAL_SEC
+
+                    next_dummy__index += 1
+                    next_dummy_write = now + VOICE_DUMMY_INTERVAL_SEC
                     time.sleep(SETTLE_SEC)
 
                 flags = read_status(bus, args.address)
@@ -257,7 +291,14 @@ def main() -> int:
                     pending_dirty |= (flags & VP_PARAM_BITS)
 
                 changed = False
-                for param_bit in (VP_FLAG_VOL, VP_FLAG_BAT, VP_FLAG_ADDR, VP_FLAG_P1, VP_FLAG_P2):
+                for param_bit in (
+                    VP_FLAG_VOL,
+                    VP_FLAG_VOICE_PROFILE_NUM,
+                    VP_FLAG_BLE_UUID_ADDR,
+                    VP_FLAG_AUDIO_OUT_NAME,
+                    VP_FLAG_WIFI_SSID,
+                    VP_FLAG_WIFI_PWD,
+                ):
                     if not (pending_dirty & param_bit):
                         continue
 
@@ -279,9 +320,10 @@ def main() -> int:
                             print(json.dumps(current, separators=(",", ":")))
                         else:
                             print(
-                                f"volume={state.volume} battery={state.battery} "
-                                f"addr='{state.ble_addr}' "
-                                f"p1='{state.param1}' p2='{state.param2}'"
+                                f"volume={state.volume} voice_profile_num={state.voice_profile_num} "
+                                f"ble_uuid_addr='{state.ble_uuid_addr}' "
+                                f"audio_out_name='{state.audio_out_name}' "
+                                f"wifi_ssid='{state.wifi_ssid}' wifi_pwd='{state.wifi_pwd[0:16]}'"
                             )
                         last_persisted = current
 

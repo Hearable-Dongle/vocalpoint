@@ -195,28 +195,34 @@ static size_t vp_param_payload_info(uint32_t param_bit,
         return VP_PAYLOAD_VOL_LEN;
     }
 
-    if (param_bit == VP_REQ_BAT) {
-        *payload = &snap->battery;
-        *clear_mask = VP_FLAG_BAT;
-        return VP_PAYLOAD_BAT_LEN;
+    if (param_bit == VP_REQ_VOICE_PROFILE_NUM) {
+        *payload = &snap->voice_profile_num;
+        *clear_mask = VP_FLAG_VOICE_PROFILE_NUM;
+        return VP_PAYLOAD_VOICE_PROFILE_NUM_LEN;
     }
 
-    if (param_bit == VP_REQ_ADDR) {
-        *payload = (const uint8_t *)snap->ble_addr;
-        *clear_mask = VP_FLAG_ADDR;
-        return VP_PAYLOAD_ADDR_LEN;
+    if (param_bit == VP_REQ_BLE_UUID_ADDR) {
+        *payload = (const uint8_t *)snap->ble_uuid_addr;
+        *clear_mask = VP_FLAG_BLE_UUID_ADDR;
+        return VP_PAYLOAD_BLE_UUID_ADDR_LEN;
     }
 
-    if (param_bit == VP_REQ_P1) {
-        *payload = (const uint8_t *)snap->param1;
-        *clear_mask = VP_FLAG_P1;
-        return VP_PAYLOAD_P1_LEN;
+    if (param_bit == VP_REQ_AUDIO_OUT_NAME) {
+        *payload = (const uint8_t *)snap->audio_out_name;
+        *clear_mask = VP_FLAG_AUDIO_OUT_NAME;
+        return VP_PAYLOAD_AUDIO_OUT_NAME_LEN;
     }
 
-    if (param_bit == VP_REQ_P2) {
-        *payload = (const uint8_t *)snap->param2;
-        *clear_mask = VP_FLAG_P2;
-        return VP_PAYLOAD_P2_LEN;
+    if (param_bit == VP_REQ_WIFI_SSID) {
+        *payload = (const uint8_t *)snap->wifi_ssid;
+        *clear_mask = VP_FLAG_WIFI_SSID;
+        return VP_PAYLOAD_WIFI_SSID_LEN;
+    }
+
+    if (param_bit == VP_REQ_WIFI_PWD) {
+        *payload = (const uint8_t *)snap->wifi_pwd;
+        *clear_mask = VP_FLAG_WIFI_PWD;
+        return VP_PAYLOAD_WIFI_PWD_LEN;
     }
 
     *payload = NULL;
@@ -315,7 +321,7 @@ static esp_err_t i2c_handle_voice_profile_write(void)
     memcpy(voice_name, payload, copy_len);
     voice_name[copy_len] = '\0';
 
-    vp_state_set_voice_profile_name(voice_name);
+    vp_state_register_voice_profile_name(voice_name);
     ESP_LOGI(TAG, "voice profile write received: '%s'", voice_name);
 
     err = i2c_render_status_response();

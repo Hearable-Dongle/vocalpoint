@@ -55,8 +55,9 @@ class AppState {
     'Morning Tide',
   );
   static final ValueNotifier<String> param2 = ValueNotifier<String>('');
-  static final ValueNotifier<List<String>> voiceProfiles =
-      ValueNotifier<List<String>>(<String>[]);
+  static final ValueNotifier<int> voiceProfileNum = ValueNotifier<int>(0);
+  static final ValueNotifier<List<VoiceProfileChoice>> voiceProfiles =
+      ValueNotifier<List<VoiceProfileChoice>>(<VoiceProfileChoice>[]);
 
   static final ValueNotifier<String> volumeServiceUuid = ValueNotifier<String>(
     '0000FFFF-0000-1000-8000-00805F9B34FB',
@@ -71,7 +72,8 @@ class AppState {
   static void clearConnection() {
     connectedDeviceId.value = null;
     connectedDeviceName.value = null;
-    voiceProfiles.value = <String>[];
+    voiceProfiles.value = <VoiceProfileChoice>[];
+    voiceProfileNum.value = 0;
     param2.value = '';
   }
 
@@ -80,6 +82,13 @@ class AppState {
     audioOutputDeviceName.value = null;
     param1.value = 'Morning Tide';
   }
+}
+
+class VoiceProfileChoice {
+  final int number;
+  final String name;
+
+  const VoiceProfileChoice({required this.number, required this.name});
 }
 
 class RememberedDevice {
@@ -568,8 +577,13 @@ class _VocalPointShellState extends State<VocalPointShell> {
 
       await _writeVolumeToDevice();
       await _syncSelectedOutputToDevice(showSuccess: false);
-      if (AppState.param2.value.trim().isNotEmpty) {
-        await _sendParam2(AppState.param2.value, showSuccess: false);
+      if (AppState.voiceProfiles.value.any(
+        (entry) => entry.number == AppState.voiceProfileNum.value,
+      )) {
+        await _sendVoiceProfileSelection(
+          AppState.voiceProfileNum.value,
+          showSuccess: false,
+        );
       }
       _startMetadataRefresh();
       await _refreshMetadataFromDevice(showErrors: false);
@@ -712,63 +726,51 @@ class _VocalPointShellState extends State<VocalPointShell> {
       return;
     }
 
-    await _writeMetadataToken('BLE_ADDR=$address', showSuccess: false);
-    await _writeMetadataToken('PARAM1=$outputName', showSuccess: false);
+    await _writeMetadataToken('BLE_UUID_ADDR=$address', showSuccess: false);
+    await _writeMetadataToken('AUDIO_OUT_NAME=$outputName', showSuccess: false);
 
     if (showSuccess) {
-      _showToast('Sent BLE_ADDR and PARAM1');
+      _showToast('Sent BLE_UUID_ADDR and AUDIO_OUT_NAME');
     }
   }
 
-  Future<void> _sendParam2(String value, {bool showSuccess = true}) async {
-    _rememberVoiceProfile(value);
-    AppState.param2.value = value;
+  Future<void> _sendVoiceProfileSelection(
+    int voiceProfileNum, {
+    bool showSuccess = true,
+  }) async {
+    AppState.voiceProfileNum.value = voiceProfileNum;
     await _writeMetadataToken(
-      'PARAM2=$value',
+      'VOICE_PROFILE_NUM=$voiceProfileNum',
       showSuccess: showSuccess,
-      successMessage: 'Sent PARAM2=$value',
+      successMessage: 'Sent VOICE_PROFILE_NUM=$voiceProfileNum',
     );
   }
 
-  void _rememberVoiceProfile(String value) {
-    final trimmed = value.trim();
-    if (trimmed.isEmpty) {
+  void _rememberVoiceProfile(String name, int number) {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) {
       return;
     }
 
-    final current = List<String>.from(AppState.voiceProfiles.value);
-    if (current.contains(trimmed)) {
-      return;
+    final current = List<VoiceProfileChoice>.from(AppState.voiceProfiles.value);
+    final index = current.indexWhere(
+      (entry) => entry.number == number || entry.name == trimmedName,
+    );
+
+    final next = VoiceProfileChoice(number: number, name: trimmedName);
+    if (index == -1) {
+      current.add(next);
+    } else {
+      current[index] = next;
     }
 
-    current.add(trimmed);
+    current.sort((lhs, rhs) => lhs.number.compareTo(rhs.number));
     AppState.voiceProfiles.value = current;
   }
 
-  void _applyMetadataToken(String key, String value) {
-    final normalized = key.trim().toUpperCase();
-    final trimmedValue = value.trim();
-
-    switch (normalized) {
-      case 'P1':
-      case 'PARAM1':
-        AppState.param1.value = trimmedValue;
-        break;
-      case 'P2':
-      case 'PARAM2':
-        AppState.param2.value = trimmedValue;
-        _rememberVoiceProfile(trimmedValue);
-        break;
-      case 'VOICE':
-      case 'VOICE_PROFILE':
-        _rememberVoiceProfile(trimmedValue);
-        break;
-      default:
-        break;
-    }
-  }
-
   void _applyMetadataPayload(String payload) {
+    final values = <String, String>{};
+
     for (final token in payload.split(';')) {
       final trimmedToken = token.trim();
       if (trimmedToken.isEmpty) {
@@ -780,10 +782,40 @@ class _VocalPointShellState extends State<VocalPointShell> {
         continue;
       }
 
-      _applyMetadataToken(
-        trimmedToken.substring(0, separator),
-        trimmedToken.substring(separator + 1),
-      );
+      values[trimmedToken.substring(0, separator).trim().toUpperCase()] =
+          trimmedToken.substring(separator + 1).trim();
+    }
+
+    if (values.containsKey('BLE_UUID_ADDR')) {
+      AppState.bleAddress.value = values['BLE_UUID_ADDR']!;
+    } else if (values.containsKey('BLE_ADDR')) {
+      AppState.bleAddress.value = values['BLE_ADDR']!;
+    }
+
+    if (values.containsKey('AUDIO_OUT_NAME')) {
+      AppState.audioOutputDeviceName.value = values['AUDIO_OUT_NAME']!;
+      AppState.param1.value = values['AUDIO_OUT_NAME']!;
+    } else if (values.containsKey('PARAM1')) {
+      AppState.param1.value = values['PARAM1']!;
+    }
+
+    if (values.containsKey('VOICE_PROFILE_NUM')) {
+      final parsed = int.tryParse(values['VOICE_PROFILE_NUM']!);
+      if (parsed != null) {
+        AppState.voiceProfileNum.value = parsed;
+      }
+    }
+
+    final voiceName =
+        values['VOICE_PROFILE_NAME'] ??
+        values['VOICE_PROFILE'] ??
+        values['VOICE'];
+    final voiceNameNum = values['VOICE_PROFILE_NAME_NUM'];
+    if (voiceName != null && voiceNameNum != null) {
+      final parsed = int.tryParse(voiceNameNum);
+      if (parsed != null) {
+        _rememberVoiceProfile(voiceName, parsed);
+      }
     }
   }
 
@@ -1890,7 +1922,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
               accent: accentBright,
             ),
             const SizedBox(height: 34),
-            ValueListenableBuilder<List<String>>(
+            ValueListenableBuilder<List<VoiceProfileChoice>>(
               valueListenable: AppState.voiceProfiles,
               builder: (context, options, _) {
                 if (options.isEmpty) {
@@ -1917,12 +1949,13 @@ class _VocalPointShellState extends State<VocalPointShell> {
                         (option) => Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: InkWell(
-                            onTap: () => _sendParam2(option),
+                            onTap: () =>
+                                _sendVoiceProfileSelection(option.number),
                             borderRadius: BorderRadius.circular(18),
-                            child: ValueListenableBuilder<String>(
-                              valueListenable: AppState.param2,
+                            child: ValueListenableBuilder<int>(
+                              valueListenable: AppState.voiceProfileNum,
                               builder: (context, selected, _) {
-                                final active = selected == option;
+                                final active = selected == option.number;
                                 return AnimatedContainer(
                                   duration: const Duration(milliseconds: 220),
                                   padding: const EdgeInsets.all(16),
@@ -1952,7 +1985,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
                                       const SizedBox(width: 22),
                                       Expanded(
                                         child: Text(
-                                          option,
+                                          option.name,
                                           style: const TextStyle(
                                             fontWeight: FontWeight.w600,
                                           ),
