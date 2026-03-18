@@ -81,13 +81,50 @@ static uint32_t vp_state_get_render_tag(uint32_t req_flags, const vp_state_snaps
     return vp_state_get_dirty_flags();
 }
 
+static int i2c_req_is_status_request(uint32_t req_flags)
+{
+    return req_flags == 0U;
+}
+
+static int i2c_req_is_param_request(uint32_t req_flags)
+{
+    uint32_t param_bits = req_flags & VP_PARAM_BITS_MASK;
+    uint32_t unknown_bits = req_flags & ~(VP_REQ_DATA | VP_PARAM_BITS_MASK | VP_REQ_OFFSET_MASK);
+
+    if ((req_flags & VP_REQ_DATA) == 0U) {
+        return 0;
+    }
+
+    if (unknown_bits != 0U) {
+        return 0;
+    }
+
+    if (param_bits == 0U || (param_bits & (param_bits - 1U)) != 0U) {
+        return 0;
+    }
+
+    return 1;
+}
+
 static esp_err_t i2c_mailbox_read_request(uint32_t *out_req)
 {
     i2c_slave_dev_t *slave = (i2c_slave_dev_t *)s_i2c_slave;
     uint8_t req_buf[VP_REQ_MAILBOX_LEN];
+    uint32_t rx_fifo_cnt = 0U;
 
     if (out_req == NULL) {
         return ESP_ERR_INVALID_ARG;
+    }
+
+    /* In RAM mode a true mailbox request from the Pi is a 5-byte write:
+     *   [ram_offset=0x00][4-byte request word]
+     * The subsequent transmit-receive used to read the response mailbox only
+     * writes a single byte (0x04) to select the RAM offset. Ignore those
+     * 1-byte selector writes so they cannot race with and replace a real
+     * request before this task sees it. */
+    i2c_ll_get_rxfifo_cnt(slave->base->hal.dev, &rx_fifo_cnt);
+    if (rx_fifo_cnt < (VP_REQ_MAILBOX_LEN + 1U)) {
+        return ESP_ERR_NOT_FOUND;
     }
 
     /* Read directly from the I2C RAM without a critical section.
@@ -220,16 +257,15 @@ static esp_err_t i2c_render_param_response(uint32_t req_flags, const vp_state_sn
 
 static esp_err_t i2c_render_response(uint32_t req_flags, const vp_state_snapshot_t *snap)
 {
-    uint32_t unknown_bits = req_flags & ~(VP_REQ_DATA | VP_PARAM_BITS_MASK | VP_REQ_OFFSET_MASK);
-    if (unknown_bits != 0U) {
-        ESP_LOGW(TAG, "request has unknown bits set: req=0x%08" PRIx32, req_flags);
+    if (i2c_req_is_status_request(req_flags)) {
+        return i2c_render_status_response();
     }
 
-    if ((req_flags & VP_REQ_DATA) != 0U) {
+    if (i2c_req_is_param_request(req_flags)) {
         return i2c_render_param_response(req_flags, snap);
     }
 
-    return i2c_render_status_response();
+    return ESP_ERR_INVALID_ARG;
 }
 
 static void i2c_bridge_task(void *arg)
@@ -264,8 +300,11 @@ static void i2c_bridge_task(void *arg)
             err = i2c_render_response(req_flags, &snap);
             if (err == ESP_OK) {
                 last_key = next_key;
-            } else {
+            } else if (err != ESP_ERR_INVALID_ARG) {
                 ESP_LOGW(TAG, "response render failed: %s", esp_err_to_name(err));
+            } else {
+                /* Ignore transient malformed writes so the previous valid
+                 * response remains in the mailbox for the master's follow-up read. */
             }
         }
 
