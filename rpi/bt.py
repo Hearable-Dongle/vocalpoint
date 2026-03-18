@@ -18,28 +18,36 @@ class BT_Interface():
         # Consume initial prompt
         self.__process.stdout.readline()
 
-    def __execute_command(self, cmd: str) -> str:
+    def __execute_command(self, cmd: str, timeout: float = 1.0) -> str:
+        # Check if process pipes are available
         if self.__process.stdin is None or self.__process.stdout is None:
             raise RuntimeError("Process pipes not available")
 
+        # Send command to bluetoothctl
         self.__process.stdin.write(cmd + "\n")
         self.__process.stdin.flush()
 
+        # Read output until prompt is reached or timeout expires
         output = []
-        line_timeout = 1.0  # seconds to wait for each line
-
         while True:
-            ready, _, _ = select.select([self.__process.stdout], [], [], line_timeout)
+            # Use select to wait for output with timeout
+            ready, _, _ = select.select([self.__process.stdout], [], [], timeout)
 
+            # If no output is ready within timeout, break loop
             if not ready:
-                # No more output within timeout
                 break
 
+            # Read line from bluetoothctl output
             line = self.__process.stdout.readline().strip()
+
+            # If line starts with prompt, break loop
             if line.startswith("[bluetoothctl]>"):
                 break
+
+            # Append line to output list
             output.append(line)
 
+        # Join output lines into single string and return
         return "\n".join(output)
     
     def power_on(self) -> bool:
@@ -102,7 +110,7 @@ class BT_Interface():
             output = self.__execute_command(cmd)
 
             # Verify output
-            if "Agent registered" or "Agent is already registered" in output:
+            if "Agent registered" in output or "Agent is already registered" in output:
                 ret_code = True
 
         except RuntimeError:
@@ -124,7 +132,7 @@ class BT_Interface():
             output = self.__execute_command(cmd)
 
             # Verify output
-            if "Agent unregistered" or "Agent is not registered" in output:
+            if "Agent unregistered" in output or "Agent is not registered" in output:
                 ret_code = True
 
         except RuntimeError:
@@ -146,7 +154,7 @@ class BT_Interface():
             output = self.__execute_command(cmd)
 
             # Verify output
-            if "Paired: yes" or "Pairing successful" in output:
+            if "Paired: yes" in output or "Pairing successful" in output:
                 ret_code = True
 
         except RuntimeError:
@@ -168,7 +176,7 @@ class BT_Interface():
             output = self.__execute_command(cmd)
 
             # Verify output
-            if "Device has been removed" or "Device is not paired" in output:
+            if "Device has been removed" in output or "Device is not paired" in output:
                 ret_code = True
 
         except RuntimeError:
@@ -190,7 +198,7 @@ class BT_Interface():
             output = self.__execute_command(cmd)
 
             # Verify output
-            if "Trusted: yes" or "Device is already trusted" in output:
+            if "Trusted: yes" in output or "Device is already trusted" in output:
                 ret_code = True
 
         except RuntimeError:
@@ -212,7 +220,7 @@ class BT_Interface():
             output = self.__execute_command(cmd)
 
             # Verify output
-            if "Trusted: no" or "Device is not trusted" in output:
+            if "Trusted: no" in output or "Device is not trusted" in output:
                 ret_code = True
 
         except RuntimeError:
@@ -234,7 +242,7 @@ class BT_Interface():
             output = self.__execute_command(cmd)
 
             # Verify output
-            if "Connection successful" or "Already connected" in output:
+            if "Connection successful" in output or "Already connected" in output:
                 ret_code = True
 
         except RuntimeError:
@@ -256,7 +264,7 @@ class BT_Interface():
             output = self.__execute_command(cmd)
 
             # Verify output
-            if "Successful disconnected" or "Already disconnected" in output:
+            if "Successful disconnected" in output or "Already disconnected" in output:
                 ret_code = True
 
         except RuntimeError:
@@ -275,7 +283,7 @@ class BT_Interface():
         
         try:
             # Execute command
-            ret_val = self.__execute_command(cmd)
+            ret_val = self.__execute_command(cmd, timeout = 2.0)
 
         except RuntimeError:
             # Return empty string if command failed
@@ -293,7 +301,7 @@ class BT_Interface():
         
         try:
             # Execute command
-            output = self.__execute_command(cmd)
+            output = self.__execute_command(cmd, timeout = 2.0)
 
             # Parse output into dictionary
             lines = output.strip().split('\n')
