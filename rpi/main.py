@@ -12,19 +12,19 @@ def main() -> int:
     bt = BT_Interface()
 
     # Initialize Bluetooth interface
-    print(bt.power_off())
-    print(bt.power_on())
-    # print(bt.devices())
-    # devices = bt.scan(duration = 20) # 15 seconds was found to be the minimum time required
-    # if cfg.sink in devices:
-    #     print(bt.pair(cfg.sink))
-    #     print(bt.trust(cfg.sink))
-    #     print(bt.connect(cfg.sink))
-    #     print(bt.info(cfg.sink))
+    assert bt.power_off(), "Failed to power off Bluetooth"
+    assert bt.power_on(), "Failed to power on Bluetooth"
+    assert bt.agent_on(), "Failed to enable Bluetooth agent"
 
-    # # Process discovered devices
-    # for addr, device in devices.items():
-    #     print(f"Found device: {addr} - {device}")
+    # Scan for devices and connect to configured sink
+    devices = bt.scan(duration = 15) # 15 seconds was found to be the minimum time required
+    assert cfg.sink in devices, f"Device {cfg.sink} not found during scan"
+    assert bt.pair(cfg.sink), f"Failed to pair with device {cfg.sink}"
+    assert bt.trust(cfg.sink), f"Failed to trust device {cfg.sink}"
+    assert bt.connect(cfg.sink), f"Failed to connect to device {cfg.sink}"
+
+    # Print Bluetooth sink information
+    print(bt.info(cfg.sink))
 
 # Script entry point
 if __name__ == "__main__":

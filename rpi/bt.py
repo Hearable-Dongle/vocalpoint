@@ -89,114 +89,205 @@ class BT_Interface():
 
         # Return False if command failed and True if command executed successfully
         return ret_code
-        
-    def pair(self, mac: str) -> bool:
-        # Build bluetoothctl command to pair with device
-        cmd = f"pair {mac}\n"
-        
-        try:
-            # Execute command
-            self.__execute_command(cmd)
-
-            # Return True if command executed successfully
-            return True
-
-        except RuntimeError:
-            # Return False if command failed
-            return False
-        
-    def unpair(self, mac: str) -> bool:
-        # Build bluetoothctl command to unpair device
-        cmd = f"remove {mac}\n"
-        
-        try:
-            # Execute command
-            self.__execute_command(cmd)
-
-            # Return True if command executed successfully
-            return True
-
-        except RuntimeError:
-            # Return False if command failed
-            return False
     
-    def trust(self, mac: str) -> bool:
-        # Build bluetoothctl command to trust device
-        cmd = f"trust {mac}\n"
-        
-        try:
-            # Execute command
-            self.__execute_command(cmd)
+    def agent_on(self) -> bool:
+        # Set return code to False by default
+        ret_code = False
 
-            # Return True if command executed successfully
-            return True
-
-        except RuntimeError:
-            # Return False if command failed
-            return False
-        
-    def untrust(self, mac: str) -> bool:
-        # Build bluetoothctl command to untrust device
-        cmd = f"untrust {mac}\n"
-        
-        try:
-            # Execute command
-            self.__execute_command(cmd)
-
-            # Return True if command executed successfully
-            return True
-
-        except RuntimeError:
-            # Return False if command failed
-            return False
-
-    def connect(self, mac: str) -> bool:
-        # Build bluetoothctl command to connect to device
-        cmd = f"connect {mac}\n"
-        
-        try:
-            # Execute command
-            self.__execute_command(cmd)
-
-            # Return True if command executed successfully
-            return True
-
-        except RuntimeError:
-            # Return False if command failed
-            return False
-        
-
-    def disconnect(self, mac: str) -> bool:
-        # Build bluetoothctl command to disconnect from device
-        cmd = f"disconnect {mac}\n"
-        
-        try:
-            # Execute command
-            self.__execute_command(cmd)
-
-            # Return True if command executed successfully
-            return True
-
-        except RuntimeError:
-            # Return False if command failed
-            return False
-        
-    def info(self, mac: str) -> str:
-        # Build bluetoothctl command to get device info
-        cmd = f"info {mac}\n"
+        # Build bluetoothctl command to enable agent
+        cmd = "agent on\n"
         
         try:
             # Execute command
             output = self.__execute_command(cmd)
 
-            # Return device info output if command executed successfully
-            return output
+            # Verify output
+            if "Agent registered" or "Agent is already registered" in output:
+                ret_code = True
+
+        except RuntimeError:
+            # Ignore error and return False if command failed
+            pass
+
+        # Return False if command failed and True if command executed successfully
+        return ret_code
+    
+    def agent_off(self) -> bool:
+        # Set return code to False by default
+        ret_code = False
+
+        # Build bluetoothctl command to enable agent
+        cmd = "agent off\n"
+        
+        try:
+            # Execute command
+            output = self.__execute_command(cmd)
+
+            # Verify output
+            if "Agent unregistered" or "Agent is not registered" in output:
+                ret_code = True
+
+        except RuntimeError:
+            # Ignore error and return False if command failed
+            pass
+
+        # Return False if command failed and True if command executed successfully
+        return ret_code
+
+    def pair(self, mac: str) -> bool:
+        # Set return code to False by default
+        ret_code = False
+
+        # Build bluetoothctl command to pair with device
+        cmd = f"pair {mac}\n"
+        
+        try:
+            # Execute command
+            output = self.__execute_command(cmd)
+
+            # Verify output
+            if "Paired: yes" or "Pairing successful" in output:
+                ret_code = True
+
+        except RuntimeError:
+            # Ignore error and return False if command failed
+            pass
+
+        # Return False if command failed and True if command executed successfully
+        return ret_code
+        
+    def unpair(self, mac: str) -> bool:
+        # Set return code to False by default
+        ret_code = False
+
+        # Build bluetoothctl command to unpair device
+        cmd = f"remove {mac}\n"
+        
+        try:
+            # Execute command
+            output = self.__execute_command(cmd)
+
+            # Verify output
+            if "Device has been removed" or "Device is not paired" in output:
+                ret_code = True
+
+        except RuntimeError:
+            # Ignore error and return False if command failed
+            pass
+
+        # Return False if command failed and True if command executed successfully
+        return ret_code
+    
+    def trust(self, mac: str) -> bool:
+        # Set return code to False by default
+        ret_code = False
+
+        # Build bluetoothctl command to trust device
+        cmd = f"trust {mac}\n"
+        
+        try:
+            # Execute command
+            output = self.__execute_command(cmd)
+
+            # Verify output
+            if "Trusted: yes" or "Device is already trusted" in output:
+                ret_code = True
+
+        except RuntimeError:
+            # Return False if command failed
+            return False
+
+        # Return False if command failed and True if command executed successfully
+        return ret_code
+
+    def untrust(self, mac: str) -> bool:
+        # Set return code to False by default
+        ret_code = False
+
+        # Build bluetoothctl command to untrust device
+        cmd = f"untrust {mac}\n"
+        
+        try:
+            # Execute command
+            output = self.__execute_command(cmd)
+
+            # Verify output
+            if "Trusted: no" or "Device is not trusted" in output:
+                ret_code = True
+
+        except RuntimeError:
+            # Ignore error and return False if command failed
+            pass
+
+        # Return False if command failed and True if command executed successfully
+        return ret_code
+
+    def connect(self, mac: str) -> bool:
+        # Set return code to False by default
+        ret_code = False
+
+        # Build bluetoothctl command to connect to device
+        cmd = f"connect {mac}\n"
+        
+        try:
+            # Execute command
+            output = self.__execute_command(cmd)
+
+            # Verify output
+            if "Connection successful" or "Already connected" in output:
+                ret_code = True
+
+        except RuntimeError:
+            # Ignore error and return False if command failed
+            pass
+
+        # Return False if command failed and True if command executed successfully
+        return ret_code
+
+    def disconnect(self, mac: str) -> bool:
+        # Set return code to False by default
+        ret_code = False
+
+        # Build bluetoothctl command to disconnect from device
+        cmd = f"disconnect {mac}\n"
+        
+        try:
+            # Execute command
+            output = self.__execute_command(cmd)
+
+            # Verify output
+            if "Successful disconnected" or "Already disconnected" in output:
+                ret_code = True
+
+        except RuntimeError:
+            # Ignore error and return False if command failed
+            pass
+
+        # Return False if command failed and True if command executed successfully
+        return ret_code
+        
+    def info(self, mac: str) -> str:
+        # Set return value to empty string by default
+        ret_val = ""
+
+        # Build bluetoothctl command to get device info
+        cmd = f"info {mac}\n"
+        
+        try:
+            # Execute command
+            ret_val = self.__execute_command(cmd)
 
         except RuntimeError:
             # Return empty string if command failed
-            return ""
+            pass
+
+        # Return device info if command executed successfully and empty string if command failed
+        return ret_val
         
     def devices(self) -> dict[str, str]:
+        # Set return value to empty dict by default
+        ret_val = {}
+
         # Build bluetoothctl command to list devices
         cmd = "paired-devices\n"
         
@@ -205,7 +296,6 @@ class BT_Interface():
             output = self.__execute_command(cmd)
 
             # Parse output into dictionary
-            devices_dict = {}
             lines = output.strip().split('\n')
             for line in lines:
                 if line.startswith('Device '):
@@ -213,51 +303,43 @@ class BT_Interface():
                     if len(parts) >= 3:
                         mac = parts[1]
                         name = ' '.join(parts[2:])
-                        devices_dict[mac] = name
-            return devices_dict
+                        ret_val[mac] = name
 
         except RuntimeError:
             # Return empty dict if command failed
-            return {}
+            pass
+
+        # Return paired devices if command executed successfully and empty dict otherwise
+        return ret_val
 
     def scan(self, duration: int) -> dict[str, str]:
         # Scan for nearby Bluetooth devices for the given duration in seconds
         devices = {}
 
         try:
-            # Start bluetoothctl process
-            process = subprocess.Popen(
-                ["bluetoothctl"],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-            )
-
-            # Verify process started successfully
-            if process.stdin is None or process.stdout is None:
-                return {}
-
             # Start scan
-            process.stdin.write("scan on\n")
-            process.stdin.flush()
+            self.__process.stdin.write("scan on\n")
+            self.__process.stdin.flush()
 
             # Read scan output until duration expires
-            temp = []
+            output = []
             start_time = time.time()
             while time.time() - start_time < duration:
                 # Read line from bluetoothctl output
-                line = process.stdout.readline()
+                line = self.__process.stdout.readline()
 
                 # If no line is read, wait briefly and continue
                 if not line:
                     time.sleep(0.01)
                     continue
 
-                temp.append(line)
+                output.append(line)
 
-            for line in temp:
+            # Stop scan and quit
+            self.__process.stdin.write("scan off\n")
+            self.__process.stdin.flush()
+
+            for line in output:
                 # Strip whitespace from line
                 line = line.strip()
 
@@ -276,21 +358,9 @@ class BT_Interface():
                         name = " ".join(parts[device_index + 2:])
                         devices[mac] = name
 
-            # Stop scan and quit
-            process.stdin.write("scan off\n")
-            process.stdin.flush()
-
-            try:
-                # Wait for process to exit
-                process.wait(timeout = 5)
-
-            except subprocess.TimeoutExpired:
-                # If process doesn't exit, terminate it
-                process.terminate()
-
-            # Return dictionary of found devices if scan completed successfully
-            return devices
-
         except Exception:
             # Return empty dict if scan failed
-            return {}
+            devices = {}
+        
+        # Return dictionary of found devices if scan completed successfully
+        return devices
