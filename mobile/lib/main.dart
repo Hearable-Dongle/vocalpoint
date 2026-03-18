@@ -54,9 +54,9 @@ class AppState {
   static final ValueNotifier<String> param1 = ValueNotifier<String>(
     'Morning Tide',
   );
-  static final ValueNotifier<String> param2 = ValueNotifier<String>(
-    'Amber Lantern',
-  );
+  static final ValueNotifier<String> param2 = ValueNotifier<String>('');
+  static final ValueNotifier<List<String>> voiceProfiles =
+      ValueNotifier<List<String>>(<String>[]);
 
   static final ValueNotifier<String> volumeServiceUuid = ValueNotifier<String>(
     '0000FFFF-0000-1000-8000-00805F9B34FB',
@@ -71,6 +71,8 @@ class AppState {
   static void clearConnection() {
     connectedDeviceId.value = null;
     connectedDeviceName.value = null;
+    voiceProfiles.value = <String>[];
+    param2.value = '';
   }
 
   static void clearOutputSelection() {
@@ -183,11 +185,6 @@ class _VocalPointShellState extends State<VocalPointShell> {
   static const Duration _panelIconAnimationDuration = Duration(
     milliseconds: 420,
   );
-  static const List<String> _param2Options = <String>[
-    'Amber Lantern',
-    'Static Bloom',
-    'Copper Atlas',
-  ];
   static const List<Color> _highlightOptions = <Color>[
     Color(0xFFFF9F1C),
     Color(0xFFFF7A1A),
@@ -211,6 +208,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
   Timer? _dashboardTimer;
   Timer? _scanTimeoutTimer;
   Timer? _volumeWriteDebounce;
+  Timer? _metadataRefreshTimer;
 
   bool _showSplashOverlay = true;
   bool _fadeSplashOverlay = false;
@@ -272,6 +270,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
     _dashboardTimer?.cancel();
     _scanTimeoutTimer?.cancel();
     _volumeWriteDebounce?.cancel();
+    _metadataRefreshTimer?.cancel();
 
     if (_isScanning) {
       UniversalBle.stopScan();
@@ -338,6 +337,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
 
           final disconnectedName =
               AppState.connectedDeviceName.value ?? 'device';
+          _stopMetadataRefresh();
           AppState.clearConnection();
           setState(() => _pendingVocalPointId = null);
           _showToast(
@@ -568,7 +568,11 @@ class _VocalPointShellState extends State<VocalPointShell> {
 
       await _writeVolumeToDevice();
       await _syncSelectedOutputToDevice(showSuccess: false);
-      await _sendParam2(AppState.param2.value, showSuccess: false);
+      if (AppState.param2.value.trim().isNotEmpty) {
+        await _sendParam2(AppState.param2.value, showSuccess: false);
+      }
+      _startMetadataRefresh();
+      await _refreshMetadataFromDevice(showErrors: false);
 
       _showToast('Connected to $name');
     } on PlatformException catch (error) {
@@ -592,6 +596,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
       // Ignore disconnect failures.
     }
 
+    _stopMetadataRefresh();
     AppState.clearConnection();
     if (mounted) {
       setState(() => _pendingVocalPointId = null);
@@ -716,12 +721,103 @@ class _VocalPointShellState extends State<VocalPointShell> {
   }
 
   Future<void> _sendParam2(String value, {bool showSuccess = true}) async {
+    _rememberVoiceProfile(value);
     AppState.param2.value = value;
     await _writeMetadataToken(
       'PARAM2=$value',
       showSuccess: showSuccess,
       successMessage: 'Sent PARAM2=$value',
     );
+  }
+
+  void _rememberVoiceProfile(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+
+    final current = List<String>.from(AppState.voiceProfiles.value);
+    if (current.contains(trimmed)) {
+      return;
+    }
+
+    current.add(trimmed);
+    AppState.voiceProfiles.value = current;
+  }
+
+  void _applyMetadataToken(String key, String value) {
+    final normalized = key.trim().toUpperCase();
+    final trimmedValue = value.trim();
+
+    switch (normalized) {
+      case 'P1':
+      case 'PARAM1':
+        AppState.param1.value = trimmedValue;
+        break;
+      case 'P2':
+      case 'PARAM2':
+        AppState.param2.value = trimmedValue;
+        _rememberVoiceProfile(trimmedValue);
+        break;
+      case 'VOICE':
+      case 'VOICE_PROFILE':
+        _rememberVoiceProfile(trimmedValue);
+        break;
+      default:
+        break;
+    }
+  }
+
+  void _applyMetadataPayload(String payload) {
+    for (final token in payload.split(';')) {
+      final trimmedToken = token.trim();
+      if (trimmedToken.isEmpty) {
+        continue;
+      }
+
+      final separator = trimmedToken.indexOf('=');
+      if (separator <= 0) {
+        continue;
+      }
+
+      _applyMetadataToken(
+        trimmedToken.substring(0, separator),
+        trimmedToken.substring(separator + 1),
+      );
+    }
+  }
+
+  Future<void> _refreshMetadataFromDevice({bool showErrors = false}) async {
+    final deviceId = AppState.connectedDeviceId.value;
+    if (deviceId == null) {
+      return;
+    }
+
+    try {
+      final payload = await UniversalBle.readValue(
+        deviceId,
+        AppState.volumeServiceUuid.value,
+        AppState.metadataCharUuid.value,
+      );
+      _applyMetadataPayload(utf8.decode(payload, allowMalformed: true));
+    } catch (error) {
+      if (showErrors) {
+        _showToast('Metadata read failed: $error');
+      }
+    }
+  }
+
+  void _startMetadataRefresh() {
+    _stopMetadataRefresh();
+    _metadataRefreshTimer = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => _refreshMetadataFromDevice(showErrors: false),
+    );
+  }
+
+  void _stopMetadataRefresh() {
+    _metadataRefreshTimer?.cancel();
+    _metadataRefreshTimer = null;
   }
 
   void _onVolumeChanged(double value) {
@@ -1790,64 +1886,98 @@ class _VocalPointShellState extends State<VocalPointShell> {
               eyebrow: 'Mix',
               title: 'Voice balance',
               subtitle:
-                  'Dummy control surface for prioritising different voices. PARAM2 still maps to the existing metadata token.',
+                  'Voice options are populated from BLE metadata fed by the ESP32.',
               accent: accentBright,
             ),
             const SizedBox(height: 34),
-            ..._param2Options.map(
-              (option) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: InkWell(
-                  onTap: () => _sendParam2(option),
-                  borderRadius: BorderRadius.circular(18),
-                  child: ValueListenableBuilder<String>(
-                    valueListenable: AppState.param2,
-                    builder: (context, selected, _) {
-                      final active = selected == option;
-                      return AnimatedContainer(
-                        duration: const Duration(milliseconds: 220),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(18),
-                          color: active
-                              ? accent.withValues(alpha: 0.18)
-                              : Colors.white.withValues(alpha: 0.05),
-                          border: Border.all(
-                            color: active
-                                ? accent.withValues(alpha: 0.72)
-                                : Colors.white.withValues(alpha: 0.08),
+            ValueListenableBuilder<List<String>>(
+              valueListenable: AppState.voiceProfiles,
+              builder: (context, options, _) {
+                if (options.isEmpty) {
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      color: Colors.white.withValues(alpha: 0.05),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.08),
+                      ),
+                    ),
+                    child: const Text(
+                      'Waiting for voice profiles from the ESP32/RPi bridge.',
+                      style: TextStyle(color: AppColors.muted),
+                    ),
+                  );
+                }
+
+                return Column(
+                  children: options
+                      .map(
+                        (option) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: InkWell(
+                            onTap: () => _sendParam2(option),
+                            borderRadius: BorderRadius.circular(18),
+                            child: ValueListenableBuilder<String>(
+                              valueListenable: AppState.param2,
+                              builder: (context, selected, _) {
+                                final active = selected == option;
+                                return AnimatedContainer(
+                                  duration: const Duration(milliseconds: 220),
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(18),
+                                    color: active
+                                        ? accent.withValues(alpha: 0.18)
+                                        : Colors.white.withValues(alpha: 0.05),
+                                    border: Border.all(
+                                      color: active
+                                          ? accent.withValues(alpha: 0.72)
+                                          : Colors.white.withValues(
+                                              alpha: 0.08,
+                                            ),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        active
+                                            ? Icons.multitrack_audio
+                                            : Icons.person_2_outlined,
+                                        color: active
+                                            ? accentBright
+                                            : AppColors.muted,
+                                      ),
+                                      const SizedBox(width: 22),
+                                      Expanded(
+                                        child: Text(
+                                          option,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                      if (active)
+                                        Icon(
+                                          Icons.check_circle,
+                                          color: accentBright,
+                                        ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
                           ),
                         ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              active
-                                  ? Icons.multitrack_audio
-                                  : Icons.person_2_outlined,
-                              color: active ? accentBright : AppColors.muted,
-                            ),
-                            const SizedBox(width: 22),
-                            Expanded(
-                              child: Text(
-                                option,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            if (active)
-                              Icon(Icons.check_circle, color: accentBright),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
+                      )
+                      .toList(),
+                );
+              },
             ),
             const SizedBox(height: 8),
             const Text(
-              'Future voice/person sliders can live here without changing the current BLE transport contract.',
+              'Each new VOICE token discovered over BLE is added here as a selectable Mix target.',
               style: TextStyle(color: AppColors.muted),
             ),
           ],

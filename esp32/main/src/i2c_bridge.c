@@ -106,6 +106,12 @@ static int i2c_req_is_param_request(uint32_t req_flags)
     return 1;
 }
 
+static int i2c_req_is_voice_profile_write_request(uint32_t req_flags)
+{
+    const uint32_t expected = VP_REQ_WRITE | VP_REQ_WRITE_VOICE_PROFILE;
+    return req_flags == expected;
+}
+
 static esp_err_t i2c_mailbox_read_request(uint32_t *out_req)
 {
     i2c_slave_dev_t *slave = (i2c_slave_dev_t *)s_i2c_slave;
@@ -151,6 +157,27 @@ static esp_err_t i2c_mailbox_write_response(const uint8_t *resp, size_t len)
     memset(mailbox, 0, sizeof(mailbox));
     memcpy(mailbox, resp, len);
     return i2c_slave_write_ram(s_i2c_slave, VP_RESP_MAILBOX_OFFSET, mailbox, sizeof(mailbox));
+}
+
+static esp_err_t i2c_mailbox_clear_request(void)
+{
+    uint8_t zero_req[VP_REQ_MAILBOX_LEN] = {0};
+    return i2c_slave_write_ram(s_i2c_slave, VP_REQ_MAILBOX_OFFSET, zero_req, sizeof(zero_req));
+}
+
+static esp_err_t i2c_mailbox_read_write_payload(uint8_t *out, size_t len)
+{
+    i2c_slave_dev_t *slave = (i2c_slave_dev_t *)s_i2c_slave;
+
+    if (out == NULL || len > VP_WRITE_MAILBOX_LEN) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    i2c_ll_read_by_nonfifo(slave->base->hal.dev,
+                           VP_WRITE_MAILBOX_OFFSET,
+                           out,
+                           len);
+    return ESP_OK;
 }
 
 static size_t vp_param_payload_info(uint32_t param_bit,
@@ -268,6 +295,37 @@ static esp_err_t i2c_render_response(uint32_t req_flags, const vp_state_snapshot
     return ESP_ERR_INVALID_ARG;
 }
 
+static esp_err_t i2c_handle_voice_profile_write(void)
+{
+    uint8_t payload[VP_WRITE_MAILBOX_LEN];
+    char voice_name[VP_WRITE_MAILBOX_LEN + 1U];
+    size_t copy_len = 0U;
+    esp_err_t err;
+
+    memset(payload, 0, sizeof(payload));
+    err = i2c_mailbox_read_write_payload(payload, sizeof(payload));
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    while (copy_len < sizeof(payload) && payload[copy_len] != '\0') {
+        copy_len++;
+    }
+
+    memcpy(voice_name, payload, copy_len);
+    voice_name[copy_len] = '\0';
+
+    vp_state_set_voice_profile_name(voice_name);
+    ESP_LOGI(TAG, "voice profile write received: '%s'", voice_name);
+
+    err = i2c_render_status_response();
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    return i2c_mailbox_clear_request();
+}
+
 static void i2c_bridge_task(void *arg)
 {
     (void)arg;
@@ -285,6 +343,15 @@ static void i2c_bridge_task(void *arg)
         if (err != ESP_OK) {
             if (err != ESP_ERR_NOT_FOUND) {
                 ESP_LOGW(TAG, "request mailbox read failed: %s", esp_err_to_name(err));
+            }
+            vTaskDelay(pdMS_TO_TICKS(I2C_TASK_PERIOD_MS));
+            continue;
+        }
+
+        if (i2c_req_is_voice_profile_write_request(req_flags)) {
+            err = i2c_handle_voice_profile_write();
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "voice profile write failed: %s", esp_err_to_name(err));
             }
             vTaskDelay(pdMS_TO_TICKS(I2C_TASK_PERIOD_MS));
             continue;

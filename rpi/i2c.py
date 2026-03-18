@@ -38,6 +38,8 @@ VP_REQ_BAT  = 1 << 3
 VP_REQ_ADDR = 1 << 4
 VP_REQ_P1   = 1 << 5
 VP_REQ_P2   = 1 << 6
+VP_REQ_WRITE = 1 << 8
+VP_REQ_WRITE_VOICE_PROFILE = 1 << 9
 VP_REQ_OFFSET_SHIFT = 24
 
 VP_PARAM_BITS = VP_FLAG_VOL | VP_FLAG_BAT | VP_FLAG_ADDR | VP_FLAG_P1 | VP_FLAG_P2
@@ -48,6 +50,8 @@ VP_REQ_MAILBOX_OFFSET = 0x00
 VP_RESP_MAILBOX_OFFSET = 0x04
 VP_RESP_MAILBOX_LEN = 28
 VP_RESP_PAYLOAD_MAX = VP_RESP_MAILBOX_LEN - VP_RESP_HDR_LEN
+VP_WRITE_MAILBOX_OFFSET = VP_RESP_MAILBOX_OFFSET
+VP_WRITE_MAILBOX_LEN = VP_RESP_MAILBOX_LEN
 
 PARAM_PAYLOAD_SIZES: dict[int, int] = {
     VP_FLAG_VOL:  1,
@@ -69,6 +73,14 @@ SETTLE_SEC = 0.020
 INTER_TRANSACTION_SEC = 0.005
 STATUS_RETRY_COUNT = 3
 PARAM_RETRY_COUNT = 3
+VOICE_WRITE_INTERVAL_SEC = 5.0
+VOICE_TEST_NAMES = (
+    "Atlas Echo",
+    "Cinder Vale",
+    "Silver Thread",
+    "Aurora Glass",
+    "Delta Choir",
+)
 
 
 @dataclass
@@ -83,6 +95,10 @@ class DeviceState:
 def _write_request(bus: SMBus, address: int, flags: int) -> None:
     data = bytes([VP_REQ_MAILBOX_OFFSET]) + struct.pack("<I", flags)
     bus.i2c_rdwr(i2c_msg.write(address, data))
+
+
+def _write_mailbox(bus: SMBus, address: int, offset: int, payload: bytes) -> None:
+    bus.i2c_rdwr(i2c_msg.write(address, bytes([offset]) + payload))
 
 
 def _read_mailbox(bus: SMBus, address: int, offset: int, n: int) -> bytes:
@@ -101,6 +117,15 @@ def _expect_exact_flags(resp_flags: int, expected_flags: int, kind: str) -> None
 
 def _req_with_offset(param_bit: int, offset: int) -> int:
     return VP_REQ_DATA | param_bit | ((offset & 0xFF) << VP_REQ_OFFSET_SHIFT)
+
+
+def write_voice_profile_name(bus: SMBus, address: int, voice_name: str) -> None:
+    encoded = voice_name.encode("utf-8")[: VP_WRITE_MAILBOX_LEN - 1]
+    payload = encoded + b"\x00"
+    payload = payload.ljust(VP_WRITE_MAILBOX_LEN, b"\x00")
+
+    _write_mailbox(bus, address, VP_WRITE_MAILBOX_OFFSET, payload)
+    _write_request(bus, address, VP_REQ_WRITE | VP_REQ_WRITE_VOICE_PROFILE)
 
 
 def read_status(bus: SMBus, address: int) -> int:
@@ -195,6 +220,11 @@ def main() -> int:
         help="Status poll interval in milliseconds (default: 100)",
     )
     parser.add_argument("--json", action="store_true", help="Print decoded state as JSON")
+    parser.add_argument(
+        "--no-voice-test",
+        action="store_true",
+        help="Disable the periodic dummy voice-profile write test",
+    )
     args = parser.parse_args()
 
     print(
@@ -205,11 +235,22 @@ def main() -> int:
     state = DeviceState()
     last_persisted: dict[str, object] | None = None
     pending_dirty = 0
+    next_voice_write = time.monotonic()
+    next_voice_index = 0
 
     with SMBus(args.bus) as bus:
         while True:
             cycle_start = time.monotonic()
             try:
+                now = time.monotonic()
+                if not args.no_voice_test and now >= next_voice_write:
+                    voice_name = VOICE_TEST_NAMES[next_voice_index % len(VOICE_TEST_NAMES)]
+                    write_voice_profile_name(bus, args.address, voice_name)
+                    print(f"voice_write='{voice_name}'")
+                    next_voice_index += 1
+                    next_voice_write = now + VOICE_WRITE_INTERVAL_SEC
+                    time.sleep(SETTLE_SEC)
+
                 flags = read_status(bus, args.address)
 
                 if flags & VP_FLAG_CHANGED:

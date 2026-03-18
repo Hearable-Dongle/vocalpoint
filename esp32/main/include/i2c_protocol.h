@@ -20,7 +20,9 @@
  *   bit 4   VP_REQ_ADDR   want current BLE address string
  *   bit 5   VP_REQ_P1     want current param1 string
  *   bit 6   VP_REQ_P2     want current param2 string
- *   bits 7-23 reserved, must be 0
+ *   bit 8   VP_REQ_WRITE  set to 1 when issuing a write command
+ *   bit 9   VP_REQ_WRITE_VOICE_PROFILE  payload mailbox contains a voice profile name
+ *   bits 7,10-23 reserved, must be 0
  *   bits 24-31 VP_REQ_OFFSET  byte offset within the requested parameter payload
  *
  *   Special case: request == 0x00000000 → read status register only.
@@ -56,6 +58,15 @@
  *
  * Long strings are fetched in multiple chunks by varying VP_REQ_OFFSET.
  *
+ * Test write path
+ * ---------------
+ * To write a voice profile name from the RPi:
+ *   1. Master writes a null-padded UTF-8 payload into mailbox offset 0x04.
+ *   2. Master writes a 32-bit request word with VP_REQ_WRITE and
+ *      VP_REQ_WRITE_VOICE_PROFILE set in the request mailbox at offset 0x00.
+ *   3. ESP32 copies the payload into shared state and exposes it over BLE
+ *      metadata as VOICE=<name>.
+ *
  * @version 0.1
  * @date 2026-03-18
  *
@@ -88,6 +99,8 @@ extern "C" {
 #define VP_REQ_ADDR        (1U << 4)
 #define VP_REQ_P1          (1U << 5)
 #define VP_REQ_P2          (1U << 6)
+#define VP_REQ_WRITE       (1U << 8)
+#define VP_REQ_WRITE_VOICE_PROFILE (1U << 9)
 #define VP_REQ_OFFSET_SHIFT 24U
 #define VP_REQ_OFFSET_MASK (0xFFU << VP_REQ_OFFSET_SHIFT)
 
@@ -119,6 +132,8 @@ extern "C" {
 #define VP_RESP_MAILBOX_OFFSET VP_REQ_MAILBOX_LEN
 #define VP_RESP_MAILBOX_LEN   (VP_I2C_RAM_LEN - VP_RESP_MAILBOX_OFFSET)
 #define VP_RESP_PAYLOAD_MAX   (VP_RESP_MAILBOX_LEN - VP_RESP_HDR_LEN)
+#define VP_WRITE_MAILBOX_OFFSET VP_RESP_MAILBOX_OFFSET
+#define VP_WRITE_MAILBOX_LEN  VP_RESP_MAILBOX_LEN
 
 /* Minimum settle time the RPi must wait between writing a request and reading
  * the response.  This gives the ESP32 time to process the request and load its

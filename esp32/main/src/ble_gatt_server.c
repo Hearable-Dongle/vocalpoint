@@ -93,18 +93,19 @@ static int metadata_access_cb(uint16_t conn_handle,
         vp_state_snapshot_t snapshot;
         vp_state_get_snapshot(&snapshot);
 
-        char text[96];
+        char text[160];
         int len = snprintf(text,
                            sizeof(text),
-                           "P1=%s;P2=%s",
+                           "P1=%s;P2=%s;VOICE=%s",
                            snapshot.param1,
-                           snapshot.param2);
+                           snapshot.param2,
+                           snapshot.voice_profile_name);
         if (len < 0) {
             return BLE_ATT_ERR_UNLIKELY;
         }
 
         if ((size_t)len >= sizeof(text)) {
-            len = sizeof(text);
+            len = (int)sizeof(text) - 1;
         }
 
         int rc = os_mbuf_append(ctxt->om, text, (uint16_t)len);

@@ -30,6 +30,7 @@ typedef struct {
     char ble_addr[VP_BLE_ADDR_MAX_LEN];
     char param1[VP_PARAM_MAX_LEN];
     char param2[VP_PARAM_MAX_LEN];
+    char voice_profile_name[VP_VOICE_PROFILE_NAME_MAX_LEN];
 } vp_state_t;
 
 static SemaphoreHandle_t s_state_mutex;
@@ -212,6 +213,19 @@ static int set_param2_locked(const char *value)
     return 1;
 }
 
+static int set_voice_profile_name_locked(const char *value)
+{
+    char next[VP_VOICE_PROFILE_NAME_MAX_LEN];
+
+    copy_string(next, sizeof(next), value);
+    if (strings_equal(s_state.voice_profile_name, next)) {
+        return 0;
+    }
+
+    copy_string(s_state.voice_profile_name, sizeof(s_state.voice_profile_name), next);
+    return 1;
+}
+
 static int parse_and_apply_token_locked(char *token)
 {
     while (isspace((unsigned char)*token)) {
@@ -286,6 +300,11 @@ static int parse_and_apply_token_locked(char *token)
         return set_param2_locked(value);
     }
 
+    if (key_equals(key, "VOICE") || key_equals(key, "VOICE_PROFILE")) {
+        (void)set_voice_profile_name_locked(value);
+        return 0;
+    }
+
     return 0;
 }
 
@@ -307,6 +326,7 @@ void vp_state_init(void)
     set_volume_locked(50U);
     set_battery_locked(87U);
     set_ble_addr_locked("N/A");
+    set_voice_profile_name_locked("");
 #endif
     commit_state_update_locked();
     unlock_state();
@@ -357,6 +377,13 @@ void vp_state_set_param2(const char *value)
     unlock_state();
 }
 
+void vp_state_set_voice_profile_name(const char *value)
+{
+    lock_state();
+    (void)set_voice_profile_name_locked(value);
+    unlock_state();
+}
+
 void vp_state_get_snapshot(vp_state_snapshot_t *out)
 {
     if (out == NULL) {
@@ -370,6 +397,9 @@ void vp_state_get_snapshot(vp_state_snapshot_t *out)
     copy_string(out->ble_addr, sizeof(out->ble_addr), s_state.ble_addr);
     copy_string(out->param1, sizeof(out->param1), s_state.param1);
     copy_string(out->param2, sizeof(out->param2), s_state.param2);
+    copy_string(out->voice_profile_name,
+                sizeof(out->voice_profile_name),
+                s_state.voice_profile_name);
     unlock_state();
 }
 
@@ -463,6 +493,7 @@ void vp_state_testing_tick(void)
     snprintf(param1, sizeof(param1), "Test Tick %lu", (unsigned long)tick_count);
     set_param1_locked(param1);
     set_param2_locked("Test Param 2");
+    set_voice_profile_name_locked("Test Voice");
 
     tick_count++;
     commit_state_update_locked();

@@ -29,6 +29,7 @@ extern "C" {
 #define VP_BATTERY_LEN          1
 #define VP_BLE_ADDR_MAX_LEN     40
 #define VP_PARAM_MAX_LEN        32
+#define VP_VOICE_PROFILE_NAME_MAX_LEN 28
 #define VP_CRC16_LEN            2
 
 #define VP_FRAME_MAGIC          0xA5
@@ -46,6 +47,7 @@ typedef struct {
     char ble_addr[VP_BLE_ADDR_MAX_LEN];
     char param1[VP_PARAM_MAX_LEN];
     char param2[VP_PARAM_MAX_LEN];
+    char voice_profile_name[VP_VOICE_PROFILE_NAME_MAX_LEN];
 } vp_state_snapshot_t;
 
 /**************************************************************************************************/
@@ -124,6 +126,18 @@ void vp_state_set_param1(const char *value);
  */
 /**************************************************************************************************/
 void vp_state_set_param2(const char *value);
+
+/**************************************************************************************************/
+/**
+ * @name vp_state_set_voice_profile_name
+ * @brief Updates the latest voice profile name received from the RPi.
+ *
+ * @param value Zero-terminated string.
+ *
+ * @return int Not used.
+ */
+/**************************************************************************************************/
+void vp_state_set_voice_profile_name(const char *value);
 
 /**************************************************************************************************/
 /**
