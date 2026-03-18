@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/ryanjing/Local/UW-Local/Capstone/Other\\\\ Development/rpi-audio-out/**)"
+    ]
+  }
+}

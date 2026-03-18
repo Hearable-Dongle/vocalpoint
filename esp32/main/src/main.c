@@ -13,8 +13,8 @@
 /**************************************************************************************************/
 
 #include "ble_manager.h"
-#include "i2c_bridge.h"
-#include "shared_state.h"
+#include "i2c.h"
+#include "state.h"
 #include "configs.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -45,7 +45,7 @@ void app_main(void)
     ESP_ERROR_CHECK(err);
 
     vp_state_init();
-    i2c_bridge_init();
+    i2c_init();
 
 #if I2C_TESTING_MODE
     xTaskCreate(shared_state_testing_task, "state_test", 3072, NULL, 1, NULL);

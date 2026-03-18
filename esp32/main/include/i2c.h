@@ -1,6 +1,6 @@
 /**************************************************************************************************/
 /**
- * @file i2c_bridge.h
+ * @file i2c.h
  * @author
  * @brief
  *
@@ -12,8 +12,8 @@
  */
 /**************************************************************************************************/
 
-#ifndef I2C_BRIDGE_H_
-#define I2C_BRIDGE_H_
+#ifndef I2C_H_
+#define I2C_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,18 +21,18 @@ extern "C" {
 
 /**************************************************************************************************/
 /**
- * @name i2c_bridge_init
- * @brief Initializes the I2C slave bridge and starts its background task.
+ * @name i2c_init
+ * @brief Initializes the I2C slave and starts its background task.
  *
  *
  *
  * @return int Not used.
  */
 /**************************************************************************************************/
-void i2c_bridge_init(void);
+void i2c_init(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif
+#endif // I2C_H

@@ -34,8 +34,17 @@ Color shiftLightness(Color color, double delta) {
 }
 
 class AppState {
+  // Flip this back to true to restore the original phone-side output scan flow.
+  static const bool usePhoneScannedOutputDevices = false;
+
   static final ValueNotifier<List<RememberedDevice>> rememberedDevices =
       ValueNotifier<List<RememberedDevice>>(<RememberedDevice>[]);
+  static final ValueNotifier<List<RememberedDevice>> rememberedOutputDevices =
+      ValueNotifier<List<RememberedDevice>>(<RememberedDevice>[]);
+  static final ValueNotifier<Set<String>> autoConnectDeviceIds =
+      ValueNotifier<Set<String>>(<String>{});
+  static final ValueNotifier<Set<String>> autoConnectOutputDeviceIds =
+      ValueNotifier<Set<String>>(<String>{});
 
   static final ValueNotifier<String?> connectedDeviceId =
       ValueNotifier<String?>(null);
@@ -51,12 +60,15 @@ class AppState {
   static final ValueNotifier<String> bleAddress = ValueNotifier<String>('');
   static final ValueNotifier<String?> audioOutputDeviceName =
       ValueNotifier<String?>(null);
+  static final ValueNotifier<List<String>> outputDeviceOptions =
+      ValueNotifier<List<String>>(<String>[]);
   static final ValueNotifier<String> param1 = ValueNotifier<String>(
     'Morning Tide',
   );
-  static final ValueNotifier<String> param2 = ValueNotifier<String>(
-    'Amber Lantern',
-  );
+  static final ValueNotifier<String> param2 = ValueNotifier<String>('');
+  static final ValueNotifier<int> voiceProfileNum = ValueNotifier<int>(0);
+  static final ValueNotifier<List<VoiceProfileChoice>> voiceProfiles =
+      ValueNotifier<List<VoiceProfileChoice>>(<VoiceProfileChoice>[]);
 
   static final ValueNotifier<String> volumeServiceUuid = ValueNotifier<String>(
     '0000FFFF-0000-1000-8000-00805F9B34FB',
@@ -71,6 +83,10 @@ class AppState {
   static void clearConnection() {
     connectedDeviceId.value = null;
     connectedDeviceName.value = null;
+    outputDeviceOptions.value = <String>[];
+    voiceProfiles.value = <VoiceProfileChoice>[];
+    voiceProfileNum.value = 0;
+    param2.value = '';
   }
 
   static void clearOutputSelection() {
@@ -78,6 +94,13 @@ class AppState {
     audioOutputDeviceName.value = null;
     param1.value = 'Morning Tide';
   }
+}
+
+class VoiceProfileChoice {
+  final int number;
+  final String name;
+
+  const VoiceProfileChoice({required this.number, required this.name});
 }
 
 class RememberedDevice {
@@ -183,11 +206,6 @@ class _VocalPointShellState extends State<VocalPointShell> {
   static const Duration _panelIconAnimationDuration = Duration(
     milliseconds: 420,
   );
-  static const List<String> _param2Options = <String>[
-    'Amber Lantern',
-    'Static Bloom',
-    'Copper Atlas',
-  ];
   static const List<Color> _highlightOptions = <Color>[
     Color(0xFFFF9F1C),
     Color(0xFFFF7A1A),
@@ -211,6 +229,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
   Timer? _dashboardTimer;
   Timer? _scanTimeoutTimer;
   Timer? _volumeWriteDebounce;
+  Timer? _metadataRefreshTimer;
 
   bool _showSplashOverlay = true;
   bool _fadeSplashOverlay = false;
@@ -272,6 +291,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
     _dashboardTimer?.cancel();
     _scanTimeoutTimer?.cancel();
     _volumeWriteDebounce?.cancel();
+    _metadataRefreshTimer?.cancel();
 
     if (_isScanning) {
       UniversalBle.stopScan();
@@ -338,6 +358,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
 
           final disconnectedName =
               AppState.connectedDeviceName.value ?? 'device';
+          _stopMetadataRefresh();
           AppState.clearConnection();
           setState(() => _pendingVocalPointId = null);
           _showToast(
@@ -389,7 +410,14 @@ class _VocalPointShellState extends State<VocalPointShell> {
   }
 
   bool get _hasConnectedVocalPoint => AppState.connectedDeviceId.value != null;
-  bool get _hasSelectedOutputDevice => AppState.bleAddress.value.isNotEmpty;
+  bool get _hasSelectedOutputDevice {
+    if (AppState.usePhoneScannedOutputDevices) {
+      return AppState.bleAddress.value.isNotEmpty;
+    }
+
+    final selected = AppState.audioOutputDeviceName.value?.trim() ?? '';
+    return selected.isNotEmpty;
+  }
 
   bool _hasDisplayName(BleDevice device) {
     final name = device.name?.trim() ?? '';
@@ -439,20 +467,20 @@ class _VocalPointShellState extends State<VocalPointShell> {
     AppState.rememberedDevices.value = current;
   }
 
-  void _rememberDevice(BleDevice device) {
-    final name = _deviceLabel(device, fallback: 'Saved device');
+  void _rememberConnectedDevice({
+    required String deviceId,
+    required String name,
+  }) {
     final current = List<RememberedDevice>.from(
       AppState.rememberedDevices.value,
     );
-    final index = current.indexWhere(
-      (entry) => entry.deviceId == device.deviceId,
-    );
+    final index = current.indexWhere((entry) => entry.deviceId == deviceId);
 
     if (index == -1) {
       current.insert(
         0,
         RememberedDevice(
-          deviceId: device.deviceId,
+          deviceId: deviceId,
           name: name,
           lastSeen: DateTime.now(),
         ),
@@ -463,7 +491,102 @@ class _VocalPointShellState extends State<VocalPointShell> {
         lastSeen: DateTime.now(),
       );
     }
+
     AppState.rememberedDevices.value = current;
+  }
+
+  void _rememberOutputDevice({required String deviceId, required String name}) {
+    final current = List<RememberedDevice>.from(
+      AppState.rememberedOutputDevices.value,
+    );
+    final index = current.indexWhere((entry) => entry.deviceId == deviceId);
+
+    if (index == -1) {
+      current.insert(
+        0,
+        RememberedDevice(
+          deviceId: deviceId,
+          name: name,
+          lastSeen: DateTime.now(),
+        ),
+      );
+    } else {
+      current[index] = current[index].copyWith(
+        name: name,
+        lastSeen: DateTime.now(),
+      );
+    }
+
+    AppState.rememberedOutputDevices.value = current;
+  }
+
+  void _forgetConnectedVocalPoint() {
+    final deviceId = AppState.connectedDeviceId.value;
+    if (deviceId == null) return;
+
+    final current = List<RememberedDevice>.from(
+      AppState.rememberedDevices.value,
+    )..removeWhere((entry) => entry.deviceId == deviceId);
+    AppState.rememberedDevices.value = current;
+    final autoConnect = Set<String>.from(AppState.autoConnectDeviceIds.value)
+      ..remove(deviceId);
+    AppState.autoConnectDeviceIds.value = autoConnect;
+    _showToast('Forgot ${AppState.connectedDeviceName.value ?? 'device'}');
+  }
+
+  void _forgetSelectedOutputDevice() {
+    final deviceId = AppState.bleAddress.value;
+    if (deviceId.isEmpty) return;
+
+    final current = List<RememberedDevice>.from(
+      AppState.rememberedOutputDevices.value,
+    )..removeWhere((entry) => entry.deviceId == deviceId);
+    AppState.rememberedOutputDevices.value = current;
+    final autoConnect = Set<String>.from(
+      AppState.autoConnectOutputDeviceIds.value,
+    )..remove(deviceId);
+    AppState.autoConnectOutputDeviceIds.value = autoConnect;
+    _showToast('Forgot ${AppState.audioOutputDeviceName.value ?? 'device'}');
+  }
+
+  bool _isConnectedVocalPointAutoConnectEnabled() {
+    final deviceId = AppState.connectedDeviceId.value;
+    if (deviceId == null) return false;
+    return AppState.autoConnectDeviceIds.value.contains(deviceId);
+  }
+
+  bool _isSelectedOutputAutoConnectEnabled() {
+    final deviceId = AppState.bleAddress.value;
+    if (deviceId.isEmpty) return false;
+    return AppState.autoConnectOutputDeviceIds.value.contains(deviceId);
+  }
+
+  void _toggleConnectedVocalPointAutoConnect() {
+    final deviceId = AppState.connectedDeviceId.value;
+    if (deviceId == null) return;
+
+    final autoConnect = Set<String>.from(AppState.autoConnectDeviceIds.value);
+    final enabled = !autoConnect.remove(deviceId);
+    if (enabled) {
+      autoConnect.add(deviceId);
+    }
+    AppState.autoConnectDeviceIds.value = autoConnect;
+    _showToast(enabled ? 'Auto-connect enabled' : 'Auto-connect disabled');
+  }
+
+  void _toggleSelectedOutputAutoConnect() {
+    final deviceId = AppState.bleAddress.value;
+    if (deviceId.isEmpty) return;
+
+    final autoConnect = Set<String>.from(
+      AppState.autoConnectOutputDeviceIds.value,
+    );
+    final enabled = !autoConnect.remove(deviceId);
+    if (enabled) {
+      autoConnect.add(deviceId);
+    }
+    AppState.autoConnectOutputDeviceIds.value = autoConnect;
+    _showToast(enabled ? 'Auto-connect enabled' : 'Auto-connect disabled');
   }
 
   Future<void> _openPanel(SetupPanel panel) async {
@@ -564,11 +687,20 @@ class _VocalPointShellState extends State<VocalPointShell> {
       AppState.connectedDeviceId.value = device.deviceId;
       AppState.connectedDeviceName.value = name;
       _touchRemembered(device.deviceId, name);
-      _rememberDevice(device);
+      _rememberConnectedDevice(deviceId: device.deviceId, name: name);
 
       await _writeVolumeToDevice();
       await _syncSelectedOutputToDevice(showSuccess: false);
-      await _sendParam2(AppState.param2.value, showSuccess: false);
+      if (AppState.voiceProfiles.value.any(
+        (entry) => entry.number == AppState.voiceProfileNum.value,
+      )) {
+        await _sendVoiceProfileSelection(
+          AppState.voiceProfileNum.value,
+          showSuccess: false,
+        );
+      }
+      _startMetadataRefresh();
+      await _refreshMetadataFromDevice(showErrors: false);
 
       _showToast('Connected to $name');
     } on PlatformException catch (error) {
@@ -592,6 +724,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
       // Ignore disconnect failures.
     }
 
+    _stopMetadataRefresh();
     AppState.clearConnection();
     if (mounted) {
       setState(() => _pendingVocalPointId = null);
@@ -599,7 +732,22 @@ class _VocalPointShellState extends State<VocalPointShell> {
     _showToast('Disconnected VocalPoint device');
   }
 
+  void _showOutputSelectionPrerequisiteDialog() {
+    _showOverlayDialog(
+      title: 'Connect VocalPoint First',
+      childBuilder: (dialogContext) => const Text(
+        'Connect to a VocalPoint device before selecting an output device.',
+        style: TextStyle(color: AppColors.white, height: 1.5),
+      ),
+    );
+  }
+
   Future<void> _selectOutputDevice(BleDevice device) async {
+    if (!_hasConnectedVocalPoint) {
+      _showOutputSelectionPrerequisiteDialog();
+      return;
+    }
+
     final name = _deviceLabel(device, fallback: 'Output device');
 
     setState(() => _pendingOutputId = device.deviceId);
@@ -613,8 +761,17 @@ class _VocalPointShellState extends State<VocalPointShell> {
       AppState.bleAddress.value = device.deviceId;
       AppState.audioOutputDeviceName.value = name;
       AppState.param1.value = name;
+      _rememberOutputDevice(deviceId: device.deviceId, name: name);
 
       await _syncSelectedOutputToDevice(showSuccess: false);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _pendingOutputId = null;
+        _expandedPanel = null;
+      });
+      _handleSetupStateChanged();
       _showToast('Selected output device: $name');
     } finally {
       if (mounted) {
@@ -626,6 +783,26 @@ class _VocalPointShellState extends State<VocalPointShell> {
   Future<void> _clearOutputSelection() async {
     AppState.clearOutputSelection();
     _showToast('Cleared output device selection');
+  }
+
+  Future<void> _selectOutputDeviceName(String name) async {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) {
+      return;
+    }
+
+    AppState.audioOutputDeviceName.value = trimmedName;
+    AppState.param1.value = trimmedName;
+    await _syncSelectedOutputToDevice(showSuccess: false);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _pendingOutputId = null;
+      _expandedPanel = null;
+    });
+    _handleSetupStateChanged();
+    _showToast('Selected output device: $trimmedName');
   }
 
   Future<void> _writeCharacteristic({
@@ -697,31 +874,177 @@ class _VocalPointShellState extends State<VocalPointShell> {
   }
 
   Future<void> _syncSelectedOutputToDevice({bool showSuccess = true}) async {
-    final address = AppState.bleAddress.value.trim();
     final outputName = AppState.audioOutputDeviceName.value?.trim() ?? '';
 
-    if (address.isEmpty || outputName.isEmpty) {
+    if (outputName.isEmpty) {
       if (showSuccess) {
         _showToast('Select an output device first');
       }
       return;
     }
 
-    await _writeMetadataToken('BLE_ADDR=$address', showSuccess: false);
-    await _writeMetadataToken('PARAM1=$outputName', showSuccess: false);
+    if (AppState.usePhoneScannedOutputDevices) {
+      final address = AppState.bleAddress.value.trim();
+      if (address.isEmpty) {
+        if (showSuccess) {
+          _showToast('Select an output device first');
+        }
+        return;
+      }
+      await _writeMetadataToken('BLE_UUID_ADDR=$address', showSuccess: false);
+    }
+
+    await _writeMetadataToken('AUDIO_OUT_NAME=$outputName', showSuccess: false);
 
     if (showSuccess) {
-      _showToast('Sent BLE_ADDR and PARAM1');
+      _showToast(
+        AppState.usePhoneScannedOutputDevices
+            ? 'Sent BLE_UUID_ADDR and AUDIO_OUT_NAME'
+            : 'Sent AUDIO_OUT_NAME',
+      );
     }
   }
 
-  Future<void> _sendParam2(String value, {bool showSuccess = true}) async {
-    AppState.param2.value = value;
+  Future<void> _sendVoiceProfileSelection(
+    int voiceProfileNum, {
+    bool showSuccess = true,
+  }) async {
+    AppState.voiceProfileNum.value = voiceProfileNum;
     await _writeMetadataToken(
-      'PARAM2=$value',
+      'VOICE_PROFILE_NUM=$voiceProfileNum',
       showSuccess: showSuccess,
-      successMessage: 'Sent PARAM2=$value',
+      successMessage: 'Sent VOICE_PROFILE_NUM=$voiceProfileNum',
     );
+  }
+
+  void _rememberVoiceProfile(String name, int number) {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) {
+      return;
+    }
+
+    final current = List<VoiceProfileChoice>.from(AppState.voiceProfiles.value);
+    final index = current.indexWhere(
+      (entry) => entry.number == number || entry.name == trimmedName,
+    );
+
+    final next = VoiceProfileChoice(number: number, name: trimmedName);
+    if (index == -1) {
+      current.add(next);
+    } else {
+      current[index] = next;
+    }
+
+    current.sort((lhs, rhs) => lhs.number.compareTo(rhs.number));
+    AppState.voiceProfiles.value = current;
+  }
+
+  void _rememberOutputDeviceName(String name) {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) {
+      return;
+    }
+
+    final current = List<String>.from(AppState.outputDeviceOptions.value);
+    if (current.contains(trimmedName)) {
+      return;
+    }
+
+    current.add(trimmedName);
+    current.sort();
+    AppState.outputDeviceOptions.value = current;
+  }
+
+  void _applyMetadataPayload(String payload) {
+    final values = <String, String>{};
+
+    for (final token in payload.split(';')) {
+      final trimmedToken = token.trim();
+      if (trimmedToken.isEmpty) {
+        continue;
+      }
+
+      final separator = trimmedToken.indexOf('=');
+      if (separator <= 0) {
+        continue;
+      }
+
+      values[trimmedToken.substring(0, separator).trim().toUpperCase()] =
+          trimmedToken.substring(separator + 1).trim();
+    }
+
+    if (values.containsKey('BLE_UUID_ADDR')) {
+      AppState.bleAddress.value = values['BLE_UUID_ADDR']!;
+    } else if (values.containsKey('BLE_ADDR')) {
+      AppState.bleAddress.value = values['BLE_ADDR']!;
+    }
+
+    final announcedOutputName = values['AUDIO_OUT_NAME_SEND'];
+    if (announcedOutputName != null) {
+      _rememberOutputDeviceName(announcedOutputName);
+    }
+
+    final selectedOutputName =
+        values['AUDIO_OUT_NAME_SET'] ??
+        values['AUDIO_OUT_NAME'];
+    if (selectedOutputName != null) {
+      AppState.audioOutputDeviceName.value = selectedOutputName;
+      AppState.param1.value = selectedOutputName;
+    } else if (values.containsKey('PARAM1')) {
+      AppState.param1.value = values['PARAM1']!;
+    }
+
+    if (values.containsKey('VOICE_PROFILE_NUM')) {
+      final parsed = int.tryParse(values['VOICE_PROFILE_NUM']!);
+      if (parsed != null) {
+        AppState.voiceProfileNum.value = parsed;
+      }
+    }
+
+    final voiceName =
+        values['VOICE_PROFILE_NAME'] ??
+        values['VOICE_PROFILE'] ??
+        values['VOICE'];
+    final voiceNameNum = values['VOICE_PROFILE_NAME_NUM'];
+    if (voiceName != null && voiceNameNum != null) {
+      final parsed = int.tryParse(voiceNameNum);
+      if (parsed != null) {
+        _rememberVoiceProfile(voiceName, parsed);
+      }
+    }
+  }
+
+  Future<void> _refreshMetadataFromDevice({bool showErrors = false}) async {
+    final deviceId = AppState.connectedDeviceId.value;
+    if (deviceId == null) {
+      return;
+    }
+
+    try {
+      final payload = await UniversalBle.readValue(
+        deviceId,
+        AppState.volumeServiceUuid.value,
+        AppState.metadataCharUuid.value,
+      );
+      _applyMetadataPayload(utf8.decode(payload, allowMalformed: true));
+    } catch (error) {
+      if (showErrors) {
+        _showToast('Metadata read failed: $error');
+      }
+    }
+  }
+
+  void _startMetadataRefresh() {
+    _stopMetadataRefresh();
+    _metadataRefreshTimer = Timer.periodic(
+      const Duration(milliseconds: 300),
+      (_) => _refreshMetadataFromDevice(showErrors: false),
+    );
+  }
+
+  void _stopMetadataRefresh() {
+    _metadataRefreshTimer?.cancel();
+    _metadataRefreshTimer = null;
   }
 
   void _onVolumeChanged(double value) {
@@ -1138,34 +1461,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'VocalPoint',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: compact ? 1.8 : 2.4,
-                      fontSize: compact ? 20 : null,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Cut out the noise. Hear what matters.',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: AppColors.mutedSoft,
-                      letterSpacing: compact ? 0.2 : 0.6,
-                      fontSize: compact ? 12.5 : 14,
-                      height: 1.25,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
+            const Spacer(),
             PopupMenuButton<ProfileMenuAction>(
               onSelected: _handleProfileMenu,
               color: AppColors.panelSoft.withValues(alpha: 0.97),
@@ -1215,10 +1511,12 @@ class _VocalPointShellState extends State<VocalPointShell> {
     final circleSize = compact ? 92.0 : 114.0;
     final loaderSize = compact ? 76.0 : 94.0;
     final iconSize = compact ? 44.0 : 58.0;
-    final labelFontSize = compact ? 13.0 : 15.0;
+    final labelFontSize = compact ? 11.5 : 13.0;
+    final actionFontSize = compact ? 14.0 : 15.5;
     final isVocalPoint = panel == SetupPanel.vocalPoint;
     final isExpanded = _expandedPanel == panel;
     final isScanning = _isScanning && _activeScanTarget == panel;
+    final canScan = isVocalPoint || AppState.usePhoneScannedOutputDevices;
     final isConnected = isVocalPoint
         ? _hasConnectedVocalPoint
         : _hasSelectedOutputDevice;
@@ -1235,7 +1533,9 @@ class _VocalPointShellState extends State<VocalPointShell> {
         ? 'Scanning...'
         : (isVocalPoint
               ? 'Scan for VocalPoint devices'
-              : 'Scan for output devices');
+              : (AppState.usePhoneScannedOutputDevices
+                    ? 'Scan for output devices'
+                    : 'Output device names are announced by the RPi over BLE metadata.'));
     final results = isVocalPoint ? _vocalPointResults : _outputResults;
 
     return AnimatedSize(
@@ -1346,6 +1646,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
                     style: TextStyle(
                       fontSize: labelFontSize,
                       fontWeight: FontWeight.w700,
+                      height: 1.15,
                     ),
                   ),
                 ],
@@ -1373,34 +1674,39 @@ class _VocalPointShellState extends State<VocalPointShell> {
                           child: Text(
                             actionLabel,
                             style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w700),
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: actionFontSize,
+                                  height: 1.2,
+                                ),
                           ),
                         ),
                         Wrap(
                           spacing: 10,
                           runSpacing: 10,
                           children: [
-                            FilledButton.icon(
-                              onPressed: isScanning
-                                  ? null
-                                  : () => _startScan(panel),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: accent,
-                                foregroundColor: Colors.black,
+                            if (canScan)
+                              FilledButton.icon(
+                                onPressed: isScanning
+                                    ? null
+                                    : () => _startScan(panel),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: accent,
+                                  foregroundColor: Colors.black,
+                                ),
+                                icon: isScanning
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.black,
+                                        ),
+                                      )
+                                    : const Icon(Icons.radar),
+                                label: Text(isScanning ? 'Scanning...' : 'Scan'),
                               ),
-                              icon: isScanning
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.black,
-                                      ),
-                                    )
-                                  : const Icon(Icons.radar),
-                              label: Text(isScanning ? 'Scanning...' : 'Scan'),
-                            ),
-                            if (isScanning)
+                            if (canScan && isScanning)
                               OutlinedButton.icon(
                                 onPressed: _stopScan,
                                 icon: const Icon(Icons.pause_circle_outline),
@@ -1413,7 +1719,9 @@ class _VocalPointShellState extends State<VocalPointShell> {
                     const SizedBox(height: 14),
                     _buildSelectedSummary(panel),
                     const SizedBox(height: 16),
-                    if (results.isEmpty)
+                    if (!isVocalPoint && !AppState.usePhoneScannedOutputDevices)
+                      _buildOutputOptionsList()
+                    else if (results.isEmpty)
                       Container(
                         padding: const EdgeInsets.all(18),
                         decoration: BoxDecoration(
@@ -1458,23 +1766,58 @@ class _VocalPointShellState extends State<VocalPointShell> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final showActionsBelow = constraints.maxWidth < 430;
-        final actions = Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            if (isVocalPoint && isReady)
-              TextButton(
-                onPressed: _showServicesForConnected,
-                child: const Text('Services'),
-              ),
-            if (isReady)
-              TextButton(
-                onPressed: isVocalPoint
-                    ? _disconnectVocalPoint
-                    : _clearOutputSelection,
-                child: Text(isVocalPoint ? 'Disconnect' : 'Clear'),
-              ),
-          ],
+        final actions = ValueListenableBuilder<List<RememberedDevice>>(
+          valueListenable: isVocalPoint
+              ? AppState.rememberedDevices
+              : AppState.rememberedOutputDevices,
+          builder: (context, _, __) {
+            return ValueListenableBuilder<Set<String>>(
+              valueListenable: isVocalPoint
+                  ? AppState.autoConnectDeviceIds
+                  : AppState.autoConnectOutputDeviceIds,
+              builder: (context, __, ___) {
+                final isAutoConnectEnabled = isVocalPoint
+                    ? _isConnectedVocalPointAutoConnectEnabled()
+                    : _isSelectedOutputAutoConnectEnabled();
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (isReady)
+                      TextButton(
+                        onPressed: isVocalPoint
+                            ? _forgetConnectedVocalPoint
+                            : _forgetSelectedOutputDevice,
+                        child: const Text('Forget this device'),
+                      ),
+                    if (isReady)
+                      TextButton(
+                        onPressed: isVocalPoint
+                            ? _toggleConnectedVocalPointAutoConnect
+                            : _toggleSelectedOutputAutoConnect,
+                        child: Text(
+                          isAutoConnectEnabled
+                              ? 'Disable Auto-connect'
+                              : 'Enable Auto-connect',
+                        ),
+                      ),
+                    if (isVocalPoint && isReady)
+                      TextButton(
+                        onPressed: _showServicesForConnected,
+                        child: const Text('Services'),
+                      ),
+                    if (isReady)
+                      TextButton(
+                        onPressed: isVocalPoint
+                            ? _disconnectVocalPoint
+                            : _clearOutputSelection,
+                        child: Text(isVocalPoint ? 'Disconnect' : 'Clear'),
+                      ),
+                  ],
+                );
+              },
+            );
+          },
         );
 
         return Container(
@@ -1627,6 +1970,100 @@ class _VocalPointShellState extends State<VocalPointShell> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildOutputOptionsList() {
+    final accent = _highlightColor;
+    final accentBright = _highlightBright;
+
+    return ValueListenableBuilder<List<String>>(
+      valueListenable: AppState.outputDeviceOptions,
+      builder: (context, options, _) {
+        if (options.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              color: Colors.white.withValues(alpha: 0.04),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.08),
+              ),
+            ),
+            child: const Text(
+              'Waiting for output device names from the ESP32/RPi bridge.',
+              style: TextStyle(color: AppColors.muted),
+            ),
+          );
+        }
+
+        return ValueListenableBuilder<String?>(
+          valueListenable: AppState.audioOutputDeviceName,
+          builder: (context, selectedName, _) {
+            final selected = selectedName?.trim() ?? '';
+            return Column(
+              children: options.map((name) {
+                final isCurrent = selected == name;
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    color: Colors.white.withValues(alpha: 0.05),
+                    border: Border.all(
+                      color: isCurrent
+                          ? AppColors.success.withValues(alpha: 0.55)
+                          : Colors.white.withValues(alpha: 0.08),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: (isCurrent ? AppColors.success : accent)
+                              .withValues(alpha: 0.16),
+                        ),
+                        child: Icon(
+                          Icons.headset,
+                          color: isCurrent ? AppColors.success : accentBright,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      FilledButton(
+                        onPressed: isCurrent
+                            ? null
+                            : () => _selectOutputDeviceName(name),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: isCurrent
+                              ? AppColors.success
+                              : accent,
+                          foregroundColor: isCurrent
+                              ? Colors.white
+                              : Colors.black,
+                        ),
+                        child: Text(isCurrent ? 'Selected' : 'Choose'),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -1790,64 +2227,108 @@ class _VocalPointShellState extends State<VocalPointShell> {
               eyebrow: 'Mix',
               title: 'Voice balance',
               subtitle:
-                  'Dummy control surface for prioritising different voices. PARAM2 still maps to the existing metadata token.',
+                  'Voice options are populated from BLE metadata fed by the ESP32.',
               accent: accentBright,
             ),
             const SizedBox(height: 34),
-            ..._param2Options.map(
-              (option) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: InkWell(
-                  onTap: () => _sendParam2(option),
-                  borderRadius: BorderRadius.circular(18),
-                  child: ValueListenableBuilder<String>(
-                    valueListenable: AppState.param2,
-                    builder: (context, selected, _) {
-                      final active = selected == option;
-                      return AnimatedContainer(
-                        duration: const Duration(milliseconds: 220),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(18),
-                          color: active
-                              ? accent.withValues(alpha: 0.18)
-                              : Colors.white.withValues(alpha: 0.05),
-                          border: Border.all(
-                            color: active
-                                ? accent.withValues(alpha: 0.72)
-                                : Colors.white.withValues(alpha: 0.08),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              active
-                                  ? Icons.multitrack_audio
-                                  : Icons.person_2_outlined,
-                              color: active ? accentBright : AppColors.muted,
-                            ),
-                            const SizedBox(width: 22),
-                            Expanded(
-                              child: Text(
-                                option,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
+            ValueListenableBuilder<List<VoiceProfileChoice>>(
+              valueListenable: AppState.voiceProfiles,
+              builder: (context, options, _) {
+                if (options.isEmpty) {
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      color: Colors.white.withValues(alpha: 0.05),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.08),
+                      ),
+                    ),
+                    child: const Text(
+                      'Waiting for voice profiles from the ESP32/RPi bridge.',
+                      style: TextStyle(color: AppColors.muted),
+                    ),
+                  );
+                }
+
+                return Column(
+                  children: [
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 320),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: options
+                              .map(
+                                (option) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: InkWell(
+                                    onTap: () =>
+                                        _sendVoiceProfileSelection(option.number),
+                                    borderRadius: BorderRadius.circular(18),
+                                    child: ValueListenableBuilder<int>(
+                                      valueListenable: AppState.voiceProfileNum,
+                                      builder: (context, selected, _) {
+                                        final active = selected == option.number;
+                                        return AnimatedContainer(
+                                          duration: const Duration(milliseconds: 220),
+                                          padding: const EdgeInsets.all(16),
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(18),
+                                            color: active
+                                                ? accent.withValues(alpha: 0.18)
+                                                : Colors.white.withValues(alpha: 0.05),
+                                            border: Border.all(
+                                              color: active
+                                                  ? accent.withValues(alpha: 0.72)
+                                                  : Colors.white.withValues(
+                                                      alpha: 0.08,
+                                                    ),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                active
+                                                    ? Icons.multitrack_audio
+                                                    : Icons.person_2_outlined,
+                                                color: active
+                                                    ? accentBright
+                                                    : AppColors.muted,
+                                              ),
+                                              const SizedBox(width: 22),
+                                              Expanded(
+                                                child: Text(
+                                                  option.name,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ),
+                                              if (active)
+                                                Icon(
+                                                  Icons.check_circle,
+                                                  color: accentBright,
+                                                ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
-                            if (active)
-                              Icon(Icons.check_circle, color: accentBright),
-                          ],
+                              )
+                              .toList(),
                         ),
-                      );
-                    },
-                  ),
-                ),
-              ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 8),
             const Text(
-              'Future voice/person sliders can live here without changing the current BLE transport contract.',
+              'Each new VOICE token discovered over BLE is added here as a selectable Mix target.',
               style: TextStyle(color: AppColors.muted),
             ),
           ],

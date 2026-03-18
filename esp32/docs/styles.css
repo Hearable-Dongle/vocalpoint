@@ -1,0 +1,707 @@
+/* ------------------------------------------------------------------------------------------------
+   VocalPoint ESP32-C3 — Doxygen Custom Theme
+   Dark sidebar, clean content area, JetBrains Mono typography, BLE-blue accent
+------------------------------------------------------------------------------------------------ */
+
+/* Import JetBrains Mono */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+
+/* ------------------------------------------------------------------------------------------------
+   CSS Variables
+------------------------------------------------------------------------------------------------ */
+
+:root {
+    /* ---- layout / content palette ---- */
+    --bg:            #ffffff;
+    --bg-subtle:     #f8f9fb;
+    --bg-code:       #f0f2f5;
+    --text:          #1a1a2e;
+    --text-muted:    #5c6470;
+    --accent:        #0057b8;
+    --accent-light:  #e8f0fb;
+    --accent-glow:   rgba(0, 87, 184, 0.12);
+    --border:        #e2e5ea;
+    --border-strong: #c8cdd5;
+    --nav-bg:        #12131a;
+    --nav-text:      #c9d1df;
+    --nav-active:    #ffffff;
+    --nav-hover-bg:  rgba(255,255,255,0.07);
+    --nav-accent:    #3d8ef8;
+    --header-bg:     #0d0e17;
+    --radius:        6px;
+    --shadow:        0 1px 4px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.05);
+    --transition:    all 0.18s ease;
+
+    /* ---- Doxygen SmartMenus (tabs.css) variables ---- */
+    --font-family-nav:              "JetBrains Mono", monospace;
+    --nav-background-color:         #12131a;
+    --nav-text-normal-color:        #d0d8e8;
+    --nav-text-normal-shadow:       none;
+    --nav-text-hover-color:         #ffffff;
+    --nav-text-hover-shadow:        none;
+    --nav-text-active-color:        #ffffff;
+    --nav-text-active-shadow:       none;
+    --nav-gradient-image:           none;
+    --nav-gradient-active-image:    linear-gradient(rgba(255,255,255,0.06), rgba(255,255,255,0.06));
+    --nav-separator-image:          none;
+    --nav-menu-background-color:    #1a1c2e;
+    --nav-menu-foreground-color:    #c9d1df;
+    --nav-menu-toggle-color:        rgba(255,255,255,0.10);
+    --nav-menu-button-color:        #c9d1df;
+    --nav-splitbar-image:           none;
+    --nav-arrow-selected-color:     #7eb8ff;
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Reset / Base
+------------------------------------------------------------------------------------------------ */
+
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+body {
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 13.5px;
+    line-height: 1.72;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Hide Doxygen branding
+------------------------------------------------------------------------------------------------ */
+
+address.footer,
+.footer,
+#nav-path .footer,
+address {
+    display: none !important;
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Links
+------------------------------------------------------------------------------------------------ */
+
+a {
+    color: var(--accent);
+    text-decoration: none;
+    transition: var(--transition);
+}
+
+a:hover {
+    color: #003d8a;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Top bar / Header
+------------------------------------------------------------------------------------------------ */
+
+#top {
+    background: var(--header-bg);
+    border-bottom: none;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+}
+
+#titlearea {
+    background: var(--header-bg);
+    padding: 14px 20px;
+    border-bottom: none;
+}
+
+#projectname {
+    color: #ffffff;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+#projectname a {
+    color: #ffffff;
+    border-bottom: none;
+    text-decoration: none;
+}
+
+#projectbrief {
+    color: var(--nav-text);
+    font-size: 11.5px;
+    font-weight: 300;
+    letter-spacing: 0.04em;
+    margin-top: 2px;
+}
+
+#projectnumber {
+    color: var(--nav-accent);
+    font-size: 11px;
+    font-weight: 400;
+    padding-left: 8px;
+    border-left: 1px solid rgba(255,255,255,0.15);
+    margin-left: 8px;
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Top navigation tabs (SmartMenus / .sm-dox)
+------------------------------------------------------------------------------------------------ */
+
+/* Main nav container — high z-index so dropdown covers the titlearea */
+#main-nav {
+    background: #1a1c2a;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    position: relative;
+    z-index: 9999;
+}
+
+/* Top-level nav bar */
+.sm-dox {
+    background: #1a1c2a !important;
+    padding: 0 12px !important;
+}
+
+/* Top-level tab links */
+.sm-dox > li > a,
+.sm-dox > li > a:visited,
+.sm-dox > li > a:focus {
+    color: #d0d8e8 !important;
+    font-family: "JetBrains Mono", monospace !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    text-shadow: none !important;
+    background-image: none !important;
+    border-bottom: 2px solid transparent;
+    transition: color 0.18s ease, border-color 0.18s ease;
+}
+
+.sm-dox > li > a:hover,
+.sm-dox > li > a.highlighted {
+    color: #ffffff !important;
+    background-image: none !important;
+    background-color: rgba(255,255,255,0.06) !important;
+    text-shadow: none !important;
+    border-bottom-color: #7eb8ff;
+}
+
+/* Active/current tab */
+.sm-dox > li > a.current {
+    color: #7eb8ff !important;
+    border-bottom-color: #7eb8ff !important;
+}
+
+/* Dropdown panel */
+.sm-dox ul {
+    background: #1a1c2e !important;
+    border: 1px solid rgba(255,255,255,0.10) !important;
+    border-radius: var(--radius) !important;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.5) !important;
+    z-index: 10000 !important;
+}
+
+/* Dropdown item links */
+.sm-dox ul a,
+.sm-dox ul a:visited,
+.sm-dox ul a:focus,
+.sm-dox ul a:active {
+    color: #c9d1df !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    border-left: 3px solid transparent !important;
+    text-shadow: none !important;
+    font-size: 12px !important;
+}
+
+.sm-dox ul a:hover {
+    color: #ffffff !important;
+    background-color: rgba(255,255,255,0.07) !important;
+    background-image: none !important;
+    border-left-color: #7eb8ff !important;
+    text-shadow: none !important;
+}
+
+/* Dropdown arrow indicator */
+.sm-dox a span.sub-arrow {
+    background: rgba(255,255,255,0.10) !important;
+    color: #d0d8e8 !important;
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Navigation sidebar
+------------------------------------------------------------------------------------------------ */
+
+#side-nav,
+#nav-tree-contents,
+#nav-tree {
+    background: var(--nav-bg) !important;
+    border-right: 1px solid rgba(255,255,255,0.06);
+}
+
+#nav-tree {
+    padding: 8px 0;
+}
+
+#nav-tree .item a,
+#nav-tree a {
+    color: var(--nav-text);
+    border-bottom: none;
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 3px 6px;
+    border-radius: 4px;
+    transition: var(--transition);
+    display: block;
+}
+
+#nav-tree .item a:hover,
+#nav-tree a:hover {
+    color: var(--nav-active);
+    background: var(--nav-hover-bg);
+    text-decoration: none;
+}
+
+#nav-tree .selected a,
+#nav-tree .item.selected > a {
+    color: var(--nav-accent);
+    background: rgba(61,142,248,0.12);
+    font-weight: 600;
+}
+
+#nav-tree .arrow {
+    color: var(--text-muted);
+}
+
+/* Sidebar resize handle */
+#splitbar {
+    background: rgba(255,255,255,0.04);
+    border-left: 1px solid rgba(255,255,255,0.06);
+    border-right: 1px solid var(--border);
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Page content container
+------------------------------------------------------------------------------------------------ */
+
+#doc-content {
+    background: var(--bg);
+}
+
+div.contents {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 28px 32px 60px;
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Page / section headings
+------------------------------------------------------------------------------------------------ */
+
+h1, h2, h3, h4 {
+    color: var(--text);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-top: 2em;
+    margin-bottom: 0.5em;
+}
+
+h1 { font-size: 22px; border-bottom: 2px solid var(--accent); padding-bottom: 8px; }
+h2 { font-size: 17px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+h3 { font-size: 14px; }
+h4 { font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+div.header {
+    background: linear-gradient(135deg, var(--bg-subtle) 0%, var(--bg) 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 32px 14px;
+}
+
+div.headertitle {
+    padding: 0;
+}
+
+div.title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.01em;
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Breadcrumb / navpath
+------------------------------------------------------------------------------------------------ */
+
+.navpath {
+    background: var(--bg-subtle);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 6px 32px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+}
+
+.navpath li {
+    color: var(--text-muted);
+}
+
+.navpath li::before {
+    content: "/";
+    margin: 0 5px;
+    color: var(--border-strong);
+}
+
+.navpath li:first-child::before {
+    content: none;
+}
+
+.navpath li b {
+    color: var(--text);
+    font-weight: 600;
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Member / function blocks
+------------------------------------------------------------------------------------------------ */
+
+.memtitle {
+    background: var(--accent-light);
+    border: 1px solid #c8d9f5;
+    border-left: 4px solid var(--accent);
+    border-bottom: none;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    border-radius: var(--radius) var(--radius) 0 0;
+    margin-bottom: 0;
+}
+
+.memitem {
+    border: 1px solid #c8d9f5;
+    border-left: 4px solid var(--accent);
+    background: var(--bg);
+    margin-bottom: 20px;
+    border-radius: 0 0 var(--radius) var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+
+.memproto {
+    background: var(--bg-subtle);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.memdoc {
+    padding: 12px 16px;
+    font-size: 13px;
+    line-height: 1.75;
+}
+
+/* Parameter tables inside memdoc */
+.params .paramname,
+.params .paramname em {
+    color: var(--accent);
+    font-style: normal;
+    font-weight: 600;
+}
+
+.params td {
+    padding: 4px 10px;
+    vertical-align: top;
+}
+
+.retval .paramname em {
+    color: #c76b00;
+    font-style: normal;
+    font-weight: 600;
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Code / fragment blocks
+------------------------------------------------------------------------------------------------ */
+
+.fragment,
+pre.fragment {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12.5px;
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    overflow-x: auto;
+    line-height: 1.65;
+    margin: 12px 0;
+}
+
+code {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    color: var(--accent);
+}
+
+/* Syntax highlighting */
+.keyword    { color: #7c3aed; font-weight: 600; }
+.keywordtype { color: #0369a1; }
+.keywordflow { color: #7c3aed; font-weight: 600; }
+.comment    { color: #6b7280; font-style: italic; }
+.preprocessor { color: #b45309; }
+.stringliteral { color: #047857; }
+.charliteral  { color: #047857; }
+.vhdldigit    { color: #047857; }
+.vhdlchar     { color: var(--text); }
+.vhdlkeyword  { color: #7c3aed; font-weight: 600; }
+.vhdllogic    { color: #dc2626; }
+
+/* ------------------------------------------------------------------------------------------------
+   Search box
+------------------------------------------------------------------------------------------------ */
+
+#MSearchBox {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 20px;
+    padding: 3px 12px;
+    color: var(--nav-text);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    transition: var(--transition);
+}
+
+#MSearchBox:focus {
+    background: rgba(255,255,255,0.14);
+    border-color: var(--nav-accent);
+    outline: none;
+}
+
+#MSearchSelectWindow,
+#MSearchResultsWindow {
+    background: #1e2030;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: var(--radius);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+}
+
+#MSearchResults .SREntry a {
+    color: var(--nav-text);
+    border-bottom: none;
+}
+
+#MSearchResults .SREntry a:hover {
+    background: var(--nav-hover-bg);
+    color: var(--nav-active);
+    text-decoration: none;
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Tables (parameter and member tables)
+------------------------------------------------------------------------------------------------ */
+
+table.memberdecls {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0 16px;
+}
+
+table.memberdecls td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12.5px;
+    vertical-align: top;
+}
+
+table.memberdecls tr:hover td {
+    background: var(--accent-light);
+}
+
+.mdescLeft, .mdescRight {
+    background: var(--bg-subtle);
+    color: var(--text-muted);
+    padding: 4px 10px;
+    font-size: 12px;
+}
+
+.memSeparator {
+    border-bottom: 1px solid var(--border);
+    height: 1px;
+}
+
+/* Section heading rows */
+td.groupheader,
+tr.groupheader td {
+    background: var(--bg-subtle) !important;
+    border-top: 2px solid var(--accent) !important;
+    border-bottom: 1px solid var(--border) !important;
+    color: var(--text) !important;
+    font-weight: 700;
+    font-size: 12.5px;
+    padding: 8px 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Generic table */
+table {
+    border-collapse: collapse;
+    margin: 10px 0;
+    width: 100%;
+}
+
+table td, table th {
+    border: 1px solid var(--border);
+    padding: 7px 12px;
+    font-size: 12.5px;
+}
+
+table th {
+    background: var(--bg-subtle);
+    font-weight: 600;
+    color: var(--text);
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Dividers
+------------------------------------------------------------------------------------------------ */
+
+hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 28px 0;
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Note / warning / attention boxes
+------------------------------------------------------------------------------------------------ */
+
+dl.note,
+dl.warning,
+dl.attention,
+dl.pre,
+dl.post,
+dl.invariant,
+dl.deprecated,
+dl.todo,
+dl.test,
+dl.bug {
+    border-radius: var(--radius);
+    border: 1px solid;
+    padding: 12px 14px;
+    margin: 16px 0;
+}
+
+dl.note       { background: #eff6ff; border-color: #bfdbfe; color: #1e3a5f; }
+dl.warning    { background: #fefce8; border-color: #fde68a; color: #713f12; }
+dl.attention  { background: #fff7ed; border-color: #fed7aa; color: #7c2d12; }
+dl.deprecated { background: #fdf2f8; border-color: #f0abfc; color: #701a75; }
+dl.todo       { background: #f0fdf4; border-color: #bbf7d0; color: #14532d; }
+dl.bug        { background: #fef2f2; border-color: #fecaca; color: #7f1d1d; }
+
+dt { font-weight: 700; margin-bottom: 4px; }
+
+/* ------------------------------------------------------------------------------------------------
+   Collapsible sections
+------------------------------------------------------------------------------------------------ */
+
+.summary {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    text-align: right;
+    padding: 4px 0;
+}
+
+.summary a {
+    color: var(--accent);
+    font-size: 11.5px;
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Doxygen layout panels (inheritance diagrams etc.)
+------------------------------------------------------------------------------------------------ */
+
+div.directory {
+    font-size: 12.5px;
+}
+
+.directory tr {
+    border-bottom: 1px solid var(--border);
+}
+
+.directory td.entry a {
+    color: var(--accent);
+    border-bottom: none;
+}
+
+.directory td.entry a:hover {
+    text-decoration: underline;
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Index page
+------------------------------------------------------------------------------------------------ */
+
+div.textblock {
+    line-height: 1.8;
+    font-size: 13.5px;
+    max-width: 800px;
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Scroll bar (WebKit)
+------------------------------------------------------------------------------------------------ */
+
+::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #9aa3af;
+}
+
+/* Sidebar scrollbar */
+#nav-tree::-webkit-scrollbar-track {
+    background: var(--nav-bg);
+}
+
+#nav-tree::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.15);
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Responsive / misc polish
+------------------------------------------------------------------------------------------------ */
+
+.memdoc p:first-child { margin-top: 0; }
+.memdoc p:last-child  { margin-bottom: 0; }
+
+/* Make inline type names in proto easier to read */
+.memproto table td.memname {
+    white-space: nowrap;
+}
+
+/* Subtle pulse on selected search result */
+#MSearchResults .SREntry.SRSelected {
+    background: rgba(61,142,248,0.15);
+    border-left: 2px solid var(--nav-accent);
+}
