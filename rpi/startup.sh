@@ -43,5 +43,5 @@ else
     echo "All dependencies are already installed."
 fi
 
-echo "All dependencies installed successfully. Starting application..."
+echo "Starting application..."
 python3 main.py

@@ -8,8 +8,8 @@ def main() -> int:
     # Load session configuration
     cfg = Session_Config()
 
-    # Create Bluetooth interface
-    bt = BT_Interface()
+    # Create Bluetooth interface with logger
+    bt = BT_Interface(cfg.logger)
 
     # Initialize Bluetooth interface
     assert bt.power_off(), "Failed to power off Bluetooth"

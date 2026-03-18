@@ -1,6 +1,8 @@
 # Standard imports
 import re
 import shutil
+import logging
+from pathlib import Path
 
 
 class Session_Config():
@@ -19,6 +21,21 @@ class Session_Config():
     ]
 
     def __init__(self) -> None:
+        # Setup logging to file in script directory
+        log_file = Path(__file__).parent / "session.log"
+        
+        # Clear the log file at the start of new session
+        log_file.open('w').close()
+        
+        # Configure logger
+        logging.basicConfig(
+            filename=log_file,
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        self.__logger = logging.getLogger(__name__)
+        
         # Verify required dependencies are available
         self.__verify_deps()
 
@@ -56,4 +73,9 @@ class Session_Config():
     def fs(self):
         # Return private list of Bluetooth sink addresses
         return self.__fs
+    
+    @property
+    def logger(self):
+        # Return logger instance
+        return self.__logger
 
