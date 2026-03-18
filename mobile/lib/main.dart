@@ -39,6 +39,12 @@ class AppState {
 
   static final ValueNotifier<List<RememberedDevice>> rememberedDevices =
       ValueNotifier<List<RememberedDevice>>(<RememberedDevice>[]);
+  static final ValueNotifier<List<RememberedDevice>> rememberedOutputDevices =
+      ValueNotifier<List<RememberedDevice>>(<RememberedDevice>[]);
+  static final ValueNotifier<Set<String>> autoConnectDeviceIds =
+      ValueNotifier<Set<String>>(<String>{});
+  static final ValueNotifier<Set<String>> autoConnectOutputDeviceIds =
+      ValueNotifier<Set<String>>(<String>{});
 
   static final ValueNotifier<String?> connectedDeviceId =
       ValueNotifier<String?>(null);
@@ -461,20 +467,20 @@ class _VocalPointShellState extends State<VocalPointShell> {
     AppState.rememberedDevices.value = current;
   }
 
-  void _rememberDevice(BleDevice device) {
-    final name = _deviceLabel(device, fallback: 'Saved device');
+  void _rememberConnectedDevice({
+    required String deviceId,
+    required String name,
+  }) {
     final current = List<RememberedDevice>.from(
       AppState.rememberedDevices.value,
     );
-    final index = current.indexWhere(
-      (entry) => entry.deviceId == device.deviceId,
-    );
+    final index = current.indexWhere((entry) => entry.deviceId == deviceId);
 
     if (index == -1) {
       current.insert(
         0,
         RememberedDevice(
-          deviceId: device.deviceId,
+          deviceId: deviceId,
           name: name,
           lastSeen: DateTime.now(),
         ),
@@ -485,7 +491,102 @@ class _VocalPointShellState extends State<VocalPointShell> {
         lastSeen: DateTime.now(),
       );
     }
+
     AppState.rememberedDevices.value = current;
+  }
+
+  void _rememberOutputDevice({required String deviceId, required String name}) {
+    final current = List<RememberedDevice>.from(
+      AppState.rememberedOutputDevices.value,
+    );
+    final index = current.indexWhere((entry) => entry.deviceId == deviceId);
+
+    if (index == -1) {
+      current.insert(
+        0,
+        RememberedDevice(
+          deviceId: deviceId,
+          name: name,
+          lastSeen: DateTime.now(),
+        ),
+      );
+    } else {
+      current[index] = current[index].copyWith(
+        name: name,
+        lastSeen: DateTime.now(),
+      );
+    }
+
+    AppState.rememberedOutputDevices.value = current;
+  }
+
+  void _forgetConnectedVocalPoint() {
+    final deviceId = AppState.connectedDeviceId.value;
+    if (deviceId == null) return;
+
+    final current = List<RememberedDevice>.from(
+      AppState.rememberedDevices.value,
+    )..removeWhere((entry) => entry.deviceId == deviceId);
+    AppState.rememberedDevices.value = current;
+    final autoConnect = Set<String>.from(AppState.autoConnectDeviceIds.value)
+      ..remove(deviceId);
+    AppState.autoConnectDeviceIds.value = autoConnect;
+    _showToast('Forgot ${AppState.connectedDeviceName.value ?? 'device'}');
+  }
+
+  void _forgetSelectedOutputDevice() {
+    final deviceId = AppState.bleAddress.value;
+    if (deviceId.isEmpty) return;
+
+    final current = List<RememberedDevice>.from(
+      AppState.rememberedOutputDevices.value,
+    )..removeWhere((entry) => entry.deviceId == deviceId);
+    AppState.rememberedOutputDevices.value = current;
+    final autoConnect = Set<String>.from(
+      AppState.autoConnectOutputDeviceIds.value,
+    )..remove(deviceId);
+    AppState.autoConnectOutputDeviceIds.value = autoConnect;
+    _showToast('Forgot ${AppState.audioOutputDeviceName.value ?? 'device'}');
+  }
+
+  bool _isConnectedVocalPointAutoConnectEnabled() {
+    final deviceId = AppState.connectedDeviceId.value;
+    if (deviceId == null) return false;
+    return AppState.autoConnectDeviceIds.value.contains(deviceId);
+  }
+
+  bool _isSelectedOutputAutoConnectEnabled() {
+    final deviceId = AppState.bleAddress.value;
+    if (deviceId.isEmpty) return false;
+    return AppState.autoConnectOutputDeviceIds.value.contains(deviceId);
+  }
+
+  void _toggleConnectedVocalPointAutoConnect() {
+    final deviceId = AppState.connectedDeviceId.value;
+    if (deviceId == null) return;
+
+    final autoConnect = Set<String>.from(AppState.autoConnectDeviceIds.value);
+    final enabled = !autoConnect.remove(deviceId);
+    if (enabled) {
+      autoConnect.add(deviceId);
+    }
+    AppState.autoConnectDeviceIds.value = autoConnect;
+    _showToast(enabled ? 'Auto-connect enabled' : 'Auto-connect disabled');
+  }
+
+  void _toggleSelectedOutputAutoConnect() {
+    final deviceId = AppState.bleAddress.value;
+    if (deviceId.isEmpty) return;
+
+    final autoConnect = Set<String>.from(
+      AppState.autoConnectOutputDeviceIds.value,
+    );
+    final enabled = !autoConnect.remove(deviceId);
+    if (enabled) {
+      autoConnect.add(deviceId);
+    }
+    AppState.autoConnectOutputDeviceIds.value = autoConnect;
+    _showToast(enabled ? 'Auto-connect enabled' : 'Auto-connect disabled');
   }
 
   Future<void> _openPanel(SetupPanel panel) async {
@@ -586,7 +687,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
       AppState.connectedDeviceId.value = device.deviceId;
       AppState.connectedDeviceName.value = name;
       _touchRemembered(device.deviceId, name);
-      _rememberDevice(device);
+      _rememberConnectedDevice(deviceId: device.deviceId, name: name);
 
       await _writeVolumeToDevice();
       await _syncSelectedOutputToDevice(showSuccess: false);
@@ -631,7 +732,22 @@ class _VocalPointShellState extends State<VocalPointShell> {
     _showToast('Disconnected VocalPoint device');
   }
 
+  void _showOutputSelectionPrerequisiteDialog() {
+    _showOverlayDialog(
+      title: 'Connect VocalPoint First',
+      childBuilder: (dialogContext) => const Text(
+        'Connect to a VocalPoint device before selecting an output device.',
+        style: TextStyle(color: AppColors.white, height: 1.5),
+      ),
+    );
+  }
+
   Future<void> _selectOutputDevice(BleDevice device) async {
+    if (!_hasConnectedVocalPoint) {
+      _showOutputSelectionPrerequisiteDialog();
+      return;
+    }
+
     final name = _deviceLabel(device, fallback: 'Output device');
 
     setState(() => _pendingOutputId = device.deviceId);
@@ -645,6 +761,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
       AppState.bleAddress.value = device.deviceId;
       AppState.audioOutputDeviceName.value = name;
       AppState.param1.value = name;
+      _rememberOutputDevice(deviceId: device.deviceId, name: name);
 
       await _syncSelectedOutputToDevice(showSuccess: false);
       if (!mounted) {
@@ -1649,23 +1766,58 @@ class _VocalPointShellState extends State<VocalPointShell> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final showActionsBelow = constraints.maxWidth < 430;
-        final actions = Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            if (isVocalPoint && isReady)
-              TextButton(
-                onPressed: _showServicesForConnected,
-                child: const Text('Services'),
-              ),
-            if (isReady)
-              TextButton(
-                onPressed: isVocalPoint
-                    ? _disconnectVocalPoint
-                    : _clearOutputSelection,
-                child: Text(isVocalPoint ? 'Disconnect' : 'Clear'),
-              ),
-          ],
+        final actions = ValueListenableBuilder<List<RememberedDevice>>(
+          valueListenable: isVocalPoint
+              ? AppState.rememberedDevices
+              : AppState.rememberedOutputDevices,
+          builder: (context, _, __) {
+            return ValueListenableBuilder<Set<String>>(
+              valueListenable: isVocalPoint
+                  ? AppState.autoConnectDeviceIds
+                  : AppState.autoConnectOutputDeviceIds,
+              builder: (context, __, ___) {
+                final isAutoConnectEnabled = isVocalPoint
+                    ? _isConnectedVocalPointAutoConnectEnabled()
+                    : _isSelectedOutputAutoConnectEnabled();
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (isReady)
+                      TextButton(
+                        onPressed: isVocalPoint
+                            ? _forgetConnectedVocalPoint
+                            : _forgetSelectedOutputDevice,
+                        child: const Text('Forget this device'),
+                      ),
+                    if (isReady)
+                      TextButton(
+                        onPressed: isVocalPoint
+                            ? _toggleConnectedVocalPointAutoConnect
+                            : _toggleSelectedOutputAutoConnect,
+                        child: Text(
+                          isAutoConnectEnabled
+                              ? 'Disable Auto-connect'
+                              : 'Enable Auto-connect',
+                        ),
+                      ),
+                    if (isVocalPoint && isReady)
+                      TextButton(
+                        onPressed: _showServicesForConnected,
+                        child: const Text('Services'),
+                      ),
+                    if (isReady)
+                      TextButton(
+                        onPressed: isVocalPoint
+                            ? _disconnectVocalPoint
+                            : _clearOutputSelection,
+                        child: Text(isVocalPoint ? 'Disconnect' : 'Clear'),
+                      ),
+                  ],
+                );
+              },
+            );
+          },
         );
 
         return Container(
