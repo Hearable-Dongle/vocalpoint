@@ -50,8 +50,8 @@ int ble_gatt_server_init(void);
 
 /**************************************************************************************************/
 /**
- * @name ble_gatt_server_notify_battery
- * @brief Sends a battery notify to the active peer when subscribed.
+ * @name ble_gatt_server_notify_voice_profile_number
+ * @brief Sends the current voice profile number to the active peer when subscribed.
  *
  * @param conn_handle Active BLE connection handle.
  *
@@ -59,20 +59,20 @@ int ble_gatt_server_init(void);
  * @return int Not used.
  */
 /**************************************************************************************************/
-void ble_gatt_server_notify_battery(uint16_t conn_handle);
+void ble_gatt_server_notify_voice_profile_number(uint16_t conn_handle);
 
 /**************************************************************************************************/
 /**
- * @name ble_gatt_server_set_battery
- * @brief Updates the internal battery cache used for notify payloads.
+ * @name ble_gatt_server_set_voice_profile_number
+ * @brief Updates the numerical representation of a voice profile.
  *
- * @param pct Battery percentage.
+ * @param voice_profile_number Voice profile number.
  *
  *
  * @return int Not used.
  */
 /**************************************************************************************************/
-void ble_gatt_server_set_battery(uint8_t pct);
+void ble_gatt_server_set_voice_profile_number(uint8_t voice_profile_number);
 
 #ifdef __cplusplus
 }
