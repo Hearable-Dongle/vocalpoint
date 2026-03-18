@@ -25,7 +25,7 @@
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
-#include "shared_state.h"
+#include "state.h"
 #include "services/gap/ble_svc_gap.h"
 
 #define BLE_ADV_SERVICE_UUID 0x1811

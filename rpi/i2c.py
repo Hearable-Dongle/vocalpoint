@@ -75,11 +75,11 @@ STATUS_RETRY_COUNT = 3
 PARAM_RETRY_COUNT = 3
 VOICE_WRITE_INTERVAL_SEC = 5.0
 VOICE_TEST_NAMES = (
-    "Atlas Echo",
-    "Cinder Vale",
-    "Silver Thread",
-    "Aurora Glass",
-    "Delta Choir",
+    "Tegan",
+    "Ryan",
+    "Matthew",
+    "Tyler",
+    "Jenny"
 )
 
 

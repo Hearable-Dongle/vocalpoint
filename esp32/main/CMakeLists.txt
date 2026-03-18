@@ -2,8 +2,8 @@ set(srcs
     "src/main.c"
     "src/ble_manager.c"
     "src/ble_gatt_server.c"
-    "src/i2c_bridge.c"
-    "src/shared_state.c")
+    "src/i2c.c"
+    "src/state.c")
 
 idf_build_get_property(idf_path IDF_PATH)
 

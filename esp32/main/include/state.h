@@ -1,6 +1,6 @@
 /**************************************************************************************************/
 /**
- * @file shared_state.h
+ * @file state.h
  * @author
  * @brief
  *
@@ -12,8 +12,8 @@
  */
 /**************************************************************************************************/
 
-#ifndef SHARED_STATE_H_
-#define SHARED_STATE_H_
+#ifndef STATE_H_
+#define STATE_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -223,4 +223,4 @@ void vp_state_testing_tick(void);
 }
 #endif
 
-#endif
+#endif // STATE_H

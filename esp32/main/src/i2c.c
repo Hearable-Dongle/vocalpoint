@@ -1,6 +1,6 @@
 /**************************************************************************************************/
 /**
- * @file i2c_bridge.c
+ * @file i2c.c
  * @brief VocalPoint I2C slave mailbox protocol.
  *
  * The ESP32-C3 uses the I2C controller's 32-byte internal RAM as two mailboxes:
@@ -19,7 +19,7 @@
  */
 /**************************************************************************************************/
 
-#include "i2c_bridge.h"
+#include "i2c.h"
 
 #include <inttypes.h>
 #include <string.h>
@@ -33,7 +33,7 @@
 #include "hal/i2c_ll.h"
 #include "i2c_protocol.h"
 #include "i2c_private.h"
-#include "shared_state.h"
+#include "state.h"
 
 #define I2C_PORT                I2C_NUM_0
 #define VP_I2C_SLAVE_ADDR       0x42
@@ -43,7 +43,7 @@
 #define I2C_TASK_PRIORITY       1
 #define I2C_TASK_PERIOD_MS      10
 
-static const char *TAG = "i2c_bridge";
+static const char *TAG = "i2c";
 static i2c_slave_dev_handle_t s_i2c_slave;
 
 typedef struct {
@@ -326,7 +326,7 @@ static esp_err_t i2c_handle_voice_profile_write(void)
     return i2c_mailbox_clear_request();
 }
 
-static void i2c_bridge_task(void *arg)
+static void i2c_task(void *arg)
 {
     (void)arg;
 
@@ -379,7 +379,7 @@ static void i2c_bridge_task(void *arg)
     }
 }
 
-void i2c_bridge_init(void)
+void i2c_init(void)
 {
     i2c_slave_config_t conf = {
         .i2c_port = I2C_PORT,
@@ -412,5 +412,5 @@ void i2c_bridge_init(void)
              (unsigned)VP_REQ_MAILBOX_OFFSET,
              (unsigned)VP_RESP_MAILBOX_OFFSET);
 
-    xTaskCreate(i2c_bridge_task, "i2c_bridge", 4096, NULL, I2C_TASK_PRIORITY, NULL);
+    xTaskCreate(i2c_task, "i2c_bridge", 4096, NULL, I2C_TASK_PRIORITY, NULL);
 }

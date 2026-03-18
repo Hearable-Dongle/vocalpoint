@@ -20,7 +20,7 @@
 #include "esp_log.h"
 #include "host/ble_hs.h"
 #include "host/ble_uuid.h"
-#include "shared_state.h"
+#include "state.h"
 #include "services/ans/ble_svc_ans.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"

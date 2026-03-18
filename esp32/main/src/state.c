@@ -21,7 +21,7 @@
 #include "freertos/semphr.h"
 #include "configs.h"
 #include "i2c_protocol.h"
-#include "shared_state.h"
+#include "state.h"
 
 typedef struct {
     uint32_t seq;
