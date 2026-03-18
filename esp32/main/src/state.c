@@ -24,7 +24,8 @@ typedef struct {
     uint8_t volume;
     uint8_t voice_profile_num;
     char ble_uuid_addr[VP_BLE_ADDR_MAX_LEN];
-    char audio_out_name[VP_PARAM_MAX_LEN];
+    char audio_out_name_send[VP_PARAM_MAX_LEN];
+    char audio_out_name_set[VP_PARAM_MAX_LEN];
     char wifi_ssid[VP_PARAM_MAX_LEN];
     char wifi_pwd[VP_PARAM_MAX_LEN];
     uint8_t voice_profile_name_num;
@@ -134,8 +135,11 @@ static void rebuild_cached_frame_locked(void)
     memcpy(&s_cached_frame[offset], s_state.ble_uuid_addr, sizeof(s_state.ble_uuid_addr));
     offset += sizeof(s_state.ble_uuid_addr);
 
-    memcpy(&s_cached_frame[offset], s_state.audio_out_name, sizeof(s_state.audio_out_name));
-    offset += sizeof(s_state.audio_out_name);
+    memcpy(&s_cached_frame[offset], s_state.audio_out_name_send, sizeof(s_state.audio_out_name_send));
+    offset += sizeof(s_state.audio_out_name_send);
+
+    memcpy(&s_cached_frame[offset], s_state.audio_out_name_set, sizeof(s_state.audio_out_name_set));
+    offset += sizeof(s_state.audio_out_name_set);
 
     memcpy(&s_cached_frame[offset], s_state.wifi_ssid, sizeof(s_state.wifi_ssid));
     offset += sizeof(s_state.wifi_ssid);
@@ -196,16 +200,29 @@ static int set_ble_uuid_addr_locked(const char *addr)
     return 1;
 }
 
-static int set_audio_out_name_locked(const char *value)
+static int set_audio_out_name_send_locked(const char *value)
 {
     char next[VP_PARAM_MAX_LEN];
 
     copy_string(next, sizeof(next), value);
-    if (strings_equal(s_state.audio_out_name, next)) {
+    if (strings_equal(s_state.audio_out_name_send, next)) {
         return 0;
     }
 
-    copy_string(s_state.audio_out_name, sizeof(s_state.audio_out_name), next);
+    copy_string(s_state.audio_out_name_send, sizeof(s_state.audio_out_name_send), next);
+    return 1;
+}
+
+static int set_audio_out_name_set_locked(const char *value)
+{
+    char next[VP_PARAM_MAX_LEN];
+
+    copy_string(next, sizeof(next), value);
+    if (strings_equal(s_state.audio_out_name_set, next)) {
+        return 0;
+    }
+
+    copy_string(s_state.audio_out_name_set, sizeof(s_state.audio_out_name_set), next);
     return 1;
 }
 
@@ -301,7 +318,7 @@ static int parse_and_apply_token_locked(char *token, uint32_t *dirty_mask)
 
     char *separator = strchr(token, '=');
     if (separator == NULL) {
-        if (set_audio_out_name_locked(token)) {
+        if (set_audio_out_name_set_locked(token)) {
             *dirty_mask |= VP_FLAG_AUDIO_OUT_NAME;
             return 1;
         }
@@ -363,9 +380,17 @@ static int parse_and_apply_token_locked(char *token, uint32_t *dirty_mask)
         return 0;
     }
 
-    if (key_equals(key, "AUDIO_OUT_NAME") || key_equals(key, "AUDIO_OUT") ||
+    if (key_equals(key, "AUDIO_OUT_NAME_SEND") || key_equals(key, "AUDIO_OUT_SEND")) {
+        if (set_audio_out_name_send_locked(value)) {
+            rebuild_cached_frame_locked();
+        }
+        return 0;
+    }
+
+    if (key_equals(key, "AUDIO_OUT_NAME_SET") || key_equals(key, "AUDIO_OUT_NAME") ||
+        key_equals(key, "AUDIO_OUT") ||
         key_equals(key, "P1") || key_equals(key, "PARAM1")) {
-        if (set_audio_out_name_locked(value)) {
+        if (set_audio_out_name_set_locked(value)) {
             *dirty_mask |= VP_FLAG_AUDIO_OUT_NAME;
             return 1;
         }
@@ -412,7 +437,8 @@ void vp_state_init(void)
     (void)set_volume_locked(2U);
     (void)set_voice_profile_number_locked(0U);
     (void)set_ble_uuid_addr_locked("AA:BB:CC:DD:EE:FF");
-    (void)set_audio_out_name_locked("Test Output");
+    (void)set_audio_out_name_send_locked("Test Output");
+    (void)set_audio_out_name_set_locked("Test Output");
     (void)set_wifi_ssid_locked("Test SSID");
     (void)set_wifi_pwd_locked("Test Password");
     (void)register_voice_profile_name_locked("Test Voice");
@@ -422,7 +448,8 @@ void vp_state_init(void)
     (void)set_volume_locked(50U);
     (void)set_voice_profile_number_locked(0U);
     (void)set_ble_uuid_addr_locked("N/A");
-    (void)set_audio_out_name_locked("");
+    (void)set_audio_out_name_send_locked("");
+    (void)set_audio_out_name_set_locked("");
     (void)set_wifi_ssid_locked("");
     (void)set_wifi_pwd_locked("");
     (void)register_voice_profile_name_locked("");
@@ -463,8 +490,17 @@ void vp_state_set_ble_uuid_addr(const char *addr)
 void vp_state_set_audio_out_name(const char *value)
 {
     lock_state();
-    if (set_audio_out_name_locked(value)) {
+    if (set_audio_out_name_set_locked(value)) {
         commit_state_update_locked(VP_FLAG_AUDIO_OUT_NAME);
+    }
+    unlock_state();
+}
+
+void vp_state_announce_audio_out_name(const char *value)
+{
+    lock_state();
+    if (set_audio_out_name_send_locked(value)) {
+        rebuild_cached_frame_locked();
     }
     unlock_state();
 }
@@ -507,7 +543,12 @@ void vp_state_get_snapshot(vp_state_snapshot_t *out)
     out->volume = s_state.volume;
     out->voice_profile_num = s_state.voice_profile_num;
     copy_string(out->ble_uuid_addr, sizeof(out->ble_uuid_addr), s_state.ble_uuid_addr);
-    copy_string(out->audio_out_name, sizeof(out->audio_out_name), s_state.audio_out_name);
+    copy_string(out->audio_out_name_send,
+                sizeof(out->audio_out_name_send),
+                s_state.audio_out_name_send);
+    copy_string(out->audio_out_name_set,
+                sizeof(out->audio_out_name_set),
+                s_state.audio_out_name_set);
     copy_string(out->wifi_ssid, sizeof(out->wifi_ssid), s_state.wifi_ssid);
     copy_string(out->wifi_pwd, sizeof(out->wifi_pwd), s_state.wifi_pwd);
     out->voice_profile_name_num = s_state.voice_profile_name_num;
@@ -608,7 +649,8 @@ void vp_state_testing_tick(void)
     snprintf(audio_out_name, sizeof(audio_out_name), "Output %lu", (unsigned long)tick_count);
     snprintf(wifi_ssid, sizeof(wifi_ssid), "SSID%lu", (unsigned long)tick_count);
     snprintf(voice_name, sizeof(voice_name), "Voice%lu", (unsigned long)tick_count);
-    (void)set_audio_out_name_locked(audio_out_name);
+    (void)set_audio_out_name_send_locked(audio_out_name);
+    (void)set_audio_out_name_set_locked(audio_out_name);
     (void)set_wifi_ssid_locked(wifi_ssid);
     (void)set_wifi_pwd_locked("TestPassword");
     (void)register_voice_profile_name_locked(voice_name);

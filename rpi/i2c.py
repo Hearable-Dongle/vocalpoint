@@ -37,11 +37,12 @@ VP_REQ_DATA                     = 1 << 1
 VP_REQ_VOL                      = 1 << 2
 VP_REQ_VOICE_PROFILE_NUM        = 1 << 3
 VP_REQ_BLE_UUID_ADDR            = 1 << 4
-VP_REQ_WRITE_AUDIO_OUT_NAME     = 1 << 5
+VP_REQ_AUDIO_OUT_NAME           = 1 << 5
 VP_REQ_WIFI_SSID                = 1 << 6
 VP_REQ_WIFI_PWD                 = 1 << 7
 VP_REQ_WRITE                    = 1 << 8
 VP_REQ_WRITE_VOICE_PROFILE      = 1 << 9
+VP_REQ_WRITE_AUDIO_OUT_NAME     = VP_REQ_AUDIO_OUT_NAME
 VP_REQ_OFFSET_SHIFT             = 24
 
 VP_PARAM_BITS = (
@@ -84,7 +85,10 @@ SETTLE_SEC = 0.020
 INTER_TRANSACTION_SEC = 0.005
 STATUS_RETRY_COUNT = 3
 PARAM_RETRY_COUNT = 3
-VOICE_DUMMY_INTERVAL_SEC = 5.0
+
+AUDIO_OUT_INTERVAL_SEC = 1.4
+
+VOICE_PROFILE_INTERVAL_SEC = 5.0
 
 VOICE_TEST_NAMES = (
     "Tegan",
@@ -134,7 +138,6 @@ def _expect_exact_flags(resp_flags: int, expected_flags: int, kind: str) -> None
             f"{kind} flags mismatch: expected 0x{expected_flags:08X} got 0x{resp_flags:08X}"
         )
 
-
 def _req_with_offset(param_bit: int, offset: int) -> int:
     return VP_REQ_DATA | param_bit | ((offset & 0xFF) << VP_REQ_OFFSET_SHIFT)
 
@@ -147,7 +150,7 @@ def write_voice_profile_name(bus: SMBus, address: int, voice_name: str) -> None:
     _write_mailbox(bus, address, VP_WRITE_MAILBOX_OFFSET, payload)
     _write_request(bus, address, VP_REQ_WRITE | VP_REQ_WRITE_VOICE_PROFILE)
 
-def write_audio_out_name(bus: SMBus, address: int, audio_out_name: str) -> None:
+def announce_audio_out_name(bus: SMBus, address: int, audio_out_name: str) -> None:
     encoded = audio_out_name.encode("utf-8")[: VP_WRITE_MAILBOX_LEN - 1]
     payload = encoded + b"\x00"
     payload = payload.ljust(VP_WRITE_MAILBOX_LEN, b"\x00")
@@ -264,25 +267,34 @@ def main() -> int:
     state = DeviceState()
     last_persisted: dict[str, object] | None = None
     pending_dirty = 0
-    next_dummy_write = time.monotonic()
-    next_dummy__index = 0
+
+    next_dummy_profile_name_write = time.monotonic()
+    next_dummy_profile_name_index = 0
+
+    next_dummy_audio_out_write = time.monotonic()
+    next_dummy_audio_out_index = 0
 
     with SMBus(args.bus) as bus:
         while True:
             cycle_start = time.monotonic()
             try:
                 now = time.monotonic()
-                if not args.no_voice_test and now >= next_dummy_write:
-                    audio_out_name = AUDIO_OUT_TEST_NAMES[next_dummy__index % len(AUDIO_OUT_TEST_NAMES)]
-                    write_audio_out_name(bus, args.address, audio_out_name)
-                    print(f"audio_out_write='{audio_out_name}'")
+                if not args.no_voice_test:
+                    if now >= next_dummy_audio_out_write:
+                        audio_out_name = AUDIO_OUT_TEST_NAMES[next_dummy_audio_out_index % len(AUDIO_OUT_TEST_NAMES)]
+                        announce_audio_out_name(bus, args.address, audio_out_name)
+                        print(f"audio_out_announce='{audio_out_name}'")
+                        next_dummy_audio_out_index += 1
+                        next_dummy_audio_out_write = now + AUDIO_OUT_INTERVAL_SEC
 
-                    voice_name = VOICE_TEST_NAMES[next_dummy__index % len(VOICE_TEST_NAMES)]
-                    write_voice_profile_name(bus, args.address, voice_name)
-                    print(f"voice_write='{voice_name}'")
+                    if now >= next_dummy_profile_name_write:
+                        voice_name = VOICE_TEST_NAMES[next_dummy_profile_name_index % len(VOICE_TEST_NAMES)]
+                        write_voice_profile_name(bus, args.address, voice_name)
+                        print(f"voice_write='{voice_name}'")
+                        next_dummy_profile_name_index += 1
+                        next_dummy_profile_name_write = now + VOICE_PROFILE_INTERVAL_SEC
 
-                    next_dummy__index += 1
-                    next_dummy_write = now + VOICE_DUMMY_INTERVAL_SEC
+
                     time.sleep(SETTLE_SEC)
 
                 flags = read_status(bus, args.address)

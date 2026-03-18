@@ -112,6 +112,12 @@ static int i2c_req_is_voice_profile_write_request(uint32_t req_flags)
     return req_flags == expected;
 }
 
+static int i2c_req_is_audio_out_name_write_request(uint32_t req_flags)
+{
+    const uint32_t expected = VP_REQ_WRITE | VP_REQ_AUDIO_OUT_NAME;
+    return req_flags == expected;
+}
+
 static esp_err_t i2c_mailbox_read_request(uint32_t *out_req)
 {
     i2c_slave_dev_t *slave = (i2c_slave_dev_t *)s_i2c_slave;
@@ -208,7 +214,7 @@ static size_t vp_param_payload_info(uint32_t param_bit,
     }
 
     if (param_bit == VP_REQ_AUDIO_OUT_NAME) {
-        *payload = (const uint8_t *)snap->audio_out_name;
+        *payload = (const uint8_t *)snap->audio_out_name_set;
         *clear_mask = VP_FLAG_AUDIO_OUT_NAME;
         return VP_PAYLOAD_AUDIO_OUT_NAME_LEN;
     }
@@ -332,6 +338,37 @@ static esp_err_t i2c_handle_voice_profile_write(void)
     return i2c_mailbox_clear_request();
 }
 
+static esp_err_t i2c_handle_audio_out_name_write(void)
+{
+    uint8_t payload[VP_WRITE_MAILBOX_LEN];
+    char audio_out_name[VP_WRITE_MAILBOX_LEN + 1U];
+    size_t copy_len = 0U;
+    esp_err_t err;
+
+    memset(payload, 0, sizeof(payload));
+    err = i2c_mailbox_read_write_payload(payload, sizeof(payload));
+    if (err != ESP_OK) {
+        return err;
+    }
+
+
+    while (copy_len < sizeof(payload) && payload[copy_len] != '\0') {
+        copy_len++;
+    }
+
+    memcpy(audio_out_name, payload, copy_len);
+    audio_out_name[copy_len] = '\0';
+    vp_state_announce_audio_out_name(audio_out_name);
+    ESP_LOGI(TAG, "audio output announcement received: '%s'", audio_out_name);
+
+    err = i2c_render_status_response();
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    return i2c_mailbox_clear_request();
+}
+
 static void i2c_task(void *arg)
 {
     (void)arg;
@@ -358,6 +395,15 @@ static void i2c_task(void *arg)
             err = i2c_handle_voice_profile_write();
             if (err != ESP_OK) {
                 ESP_LOGW(TAG, "voice profile write failed: %s", esp_err_to_name(err));
+            }
+            vTaskDelay(pdMS_TO_TICKS(I2C_TASK_PERIOD_MS));
+            continue;
+        }
+
+        if (i2c_req_is_audio_out_name_write_request(req_flags)) {
+            err = i2c_handle_audio_out_name_write();
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "audio output write failed: %s", esp_err_to_name(err));
             }
             vTaskDelay(pdMS_TO_TICKS(I2C_TASK_PERIOD_MS));
             continue;

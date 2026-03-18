@@ -37,18 +37,20 @@ extern "C" {
 #define VP_FRAME_MAGIC          0xA5
 #define VP_FRAME_VERSION        0x01
 
-// Current total size is 173 bytes before CRC, 175 bytes including CRC.
+// Current total size is 205 bytes before CRC, 207 bytes including CRC.
 #define VP_I2C_FRAME_SIZE (VP_MAGIC_BIT_LEN + VP_FRAME_VERSION_LEN + VP_SEQ_MAX_LEN + VP_VOLUME_LEN + \
                            VP_VOICE_PROFILE_NUM_LEN + VP_BLE_ADDR_MAX_LEN + VP_PARAM_MAX_LEN + \
-                           VP_PARAM_MAX_LEN + VP_PARAM_MAX_LEN + VP_VOICE_PROFILE_NAME_NUM_LEN + \
-                           VP_VOICE_PROFILE_NAME_MAX_LEN + VP_CRC16_LEN)
+                           VP_PARAM_MAX_LEN + VP_PARAM_MAX_LEN + VP_PARAM_MAX_LEN + \
+                           VP_VOICE_PROFILE_NAME_NUM_LEN + VP_VOICE_PROFILE_NAME_MAX_LEN + \
+                           VP_CRC16_LEN)
 
 typedef struct {
     uint32_t seq;
     uint8_t volume;
     uint8_t voice_profile_num;
     char ble_uuid_addr[VP_BLE_ADDR_MAX_LEN];
-    char audio_out_name[VP_PARAM_MAX_LEN];
+    char audio_out_name_send[VP_PARAM_MAX_LEN];
+    char audio_out_name_set[VP_PARAM_MAX_LEN];
     char wifi_ssid[VP_PARAM_MAX_LEN];
     char wifi_pwd[VP_PARAM_MAX_LEN];
     uint8_t voice_profile_name_num;
@@ -104,6 +106,21 @@ void vp_state_set_ble_uuid_addr(const char *addr);
  */
 /**************************************************************************************************/
 void vp_state_set_audio_out_name(const char *value);
+
+/**************************************************************************************************/
+/**
+ * @name vp_state_announce_audio_out_name
+ * @brief Stores the latest audio output device name announced by the RPi.
+ *
+ * This value is exposed over BLE so the mobile app can build a list of output
+ * device names without using the phone-side scan path.
+ *
+ * @param value Zero-terminated string.
+ *
+ * @return int Not used.
+ */
+/**************************************************************************************************/
+void vp_state_announce_audio_out_name(const char *value);
 
 /**************************************************************************************************/
 /**

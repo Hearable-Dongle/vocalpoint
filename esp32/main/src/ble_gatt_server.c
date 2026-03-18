@@ -27,6 +27,7 @@
 
 static const char *s_tag = "ble_gatt_server";
 static uint16_t s_batt_chr_handle;
+static const size_t s_metadata_text_capacity = 448U;
 
 static int voice_profile_number_access_cb(uint16_t conn_handle,
                                           uint16_t attr_handle,
@@ -95,24 +96,27 @@ static int metadata_access_cb(uint16_t conn_handle,
         vp_state_snapshot_t snapshot;
         vp_state_get_snapshot(&snapshot);
 
-        char text[224];
+        char text[448];
         int len = snprintf(text,
                            sizeof(text),
-                           "BLE_UUID_ADDR=%s;AUDIO_OUT_NAME=%s;WIFI_SSID=%s;WIFI_PWD=%s;"
-                           "VOICE_PROFILE_NUM=%u;VOICE_PROFILE_NAME=%s;VOICE_PROFILE_NAME_NUM=%u",
+                           "BLE_UUID_ADDR=%s;VOICE_PROFILE_NUM=%u;VOICE_PROFILE_NAME=%s;"
+                           "VOICE_PROFILE_NAME_NUM=%u;AUDIO_OUT_NAME_SEND=%s;"
+                           "AUDIO_OUT_NAME_SET=%s;AUDIO_OUT_NAME=%s;WIFI_SSID=%s;WIFI_PWD=%s",
                            snapshot.ble_uuid_addr,
-                           snapshot.audio_out_name,
-                           snapshot.wifi_ssid,
-                           snapshot.wifi_pwd,
                            snapshot.voice_profile_num,
                            snapshot.voice_profile_name,
-                           snapshot.voice_profile_name_num);
+                           snapshot.voice_profile_name_num,
+                           snapshot.audio_out_name_send,
+                           snapshot.audio_out_name_set,
+                           snapshot.audio_out_name_set,
+                           snapshot.wifi_ssid,
+                           snapshot.wifi_pwd);
         if (len < 0) {
             return BLE_ATT_ERR_UNLIKELY;
         }
 
-        if ((size_t)len >= sizeof(text)) {
-            len = (int)sizeof(text) - 1;
+        if ((size_t)len >= s_metadata_text_capacity) {
+            len = (int)s_metadata_text_capacity - 1;
         }
 
         int rc = os_mbuf_append(ctxt->om, text, (uint16_t)len);

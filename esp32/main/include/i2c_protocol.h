@@ -18,7 +18,7 @@
  *   bit 2   VP_REQ_VOL    want current volume
  *   bit 3   VP_REQ_VOICE_PROFILE_NUM  want current voice profile number
  *   bit 4   VP_REQ_BLE_UUID_ADDR      want current BLE UUID/address string
- *   bit 5   VP_REQ_AUDIO_OUT_NAME     want current audio output device name string
+ *   bit 5   VP_REQ_AUDIO_OUT_NAME     want current selected audio output device name string
  *   bit 6   VP_REQ_WIFI_SSID          want current Wi-Fi SSID string
  *   bit 7   VP_REQ_WIFI_PWD           want current Wi-Fi password string
  *   bit 8   VP_REQ_WRITE  set to 1 when issuing a write command
@@ -35,7 +35,7 @@
  *   bit 2   VP_FLAG_VOL      volume changed
  *   bit 3   VP_FLAG_VOICE_PROFILE_NUM  voice profile number changed
  *   bit 4   VP_FLAG_BLE_UUID_ADDR      BLE UUID/address changed
- *   bit 5   VP_FLAG_AUDIO_OUT_NAME     audio output device name changed
+ *   bit 5   VP_FLAG_AUDIO_OUT_NAME     selected audio output device name changed
  *   bit 6   VP_FLAG_WIFI_SSID          Wi-Fi SSID changed
  *   bit 7   VP_FLAG_WIFI_PWD           Wi-Fi password changed
  *   bits 8-31  reserved / future error flags
@@ -68,6 +68,13 @@
  *      VP_REQ_WRITE_VOICE_PROFILE set in the request mailbox at offset 0x00.
  *   3. ESP32 copies the payload into shared state and exposes it over BLE
  *      metadata as VOICE_PROFILE_NAME=<name>;VOICE_PROFILE_NAME_NUM=<n>.
+ *
+ * To announce an audio output name from the RPi:
+ *   1. Master writes a null-padded UTF-8 payload into mailbox offset 0x04.
+ *   2. Master writes a 32-bit request word with VP_REQ_WRITE and
+ *      VP_REQ_WRITE_AUDIO_OUT_NAME set in the request mailbox at offset 0x00.
+ *   3. ESP32 copies the payload into shared state and exposes it over BLE
+ *      metadata as AUDIO_OUT_NAME_SEND=<name>.
  *
  * @version 0.1
  * @date 2026-03-18
@@ -105,6 +112,7 @@ extern "C" {
 #define VP_REQ_WIFI_PWD             (1U << 7)
 #define VP_REQ_WRITE                (1U << 8)
 #define VP_REQ_WRITE_VOICE_PROFILE  (1U << 9)
+#define VP_REQ_WRITE_AUDIO_OUT_NAME VP_REQ_AUDIO_OUT_NAME
 #define VP_REQ_OFFSET_SHIFT         24U
 #define VP_REQ_OFFSET_MASK          (0xFFU << VP_REQ_OFFSET_SHIFT)
 
