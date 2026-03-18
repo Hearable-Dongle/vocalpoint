@@ -27,6 +27,9 @@ typedef struct {
     uint32_t seq;
     uint8_t volume;
     uint8_t battery;
+    uint16_t volume_seq;
+    uint16_t volume_ack_seq;
+    uint8_t volume_status;
     char ble_addr[VP_BLE_ADDR_MAX_LEN];
     char param1[VP_PARAM_MAX_LEN];
     char param2[VP_PARAM_MAX_LEN];
@@ -154,6 +157,12 @@ static int set_volume_locked(uint8_t volume)
 
     s_state.volume = next;
     s_dirty_flags |= VP_FLAG_VOL;
+    s_state.volume_seq++;
+    if (s_state.volume_seq == 0U) {
+        s_state.volume_seq = 1U;
+    }
+    s_state.volume_status = VP_VOLUME_STATUS_PENDING;
+    s_dirty_flags |= VP_FLAG_VOL_STATUS;
     return 1;
 }
 
@@ -321,6 +330,21 @@ void vp_state_set_volume(uint8_t volume)
     unlock_state();
 }
 
+void vp_state_ack_volume(uint16_t volume_seq, uint8_t status)
+{
+    lock_state();
+
+    if (volume_seq == s_state.volume_seq &&
+        (s_state.volume_ack_seq != volume_seq || s_state.volume_status != status)) {
+        s_state.volume_ack_seq = volume_seq;
+        s_state.volume_status = status;
+        s_dirty_flags |= VP_FLAG_VOL_STATUS;
+        commit_state_update_locked();
+    }
+
+    unlock_state();
+}
+
 void vp_state_set_battery(uint8_t battery)
 {
     lock_state();
@@ -367,6 +391,9 @@ void vp_state_get_snapshot(vp_state_snapshot_t *out)
     out->seq = s_state.seq;
     out->volume = s_state.volume;
     out->battery = s_state.battery;
+    out->volume_seq = s_state.volume_seq;
+    out->volume_ack_seq = s_state.volume_ack_seq;
+    out->volume_status = s_state.volume_status;
     copy_string(out->ble_addr, sizeof(out->ble_addr), s_state.ble_addr);
     copy_string(out->param1, sizeof(out->param1), s_state.param1);
     copy_string(out->param2, sizeof(out->param2), s_state.param2);

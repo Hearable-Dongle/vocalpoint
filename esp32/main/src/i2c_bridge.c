@@ -72,6 +72,16 @@ static uint32_t vp_req_get_offset(uint32_t req_flags)
     return (req_flags & VP_REQ_OFFSET_MASK) >> VP_REQ_OFFSET_SHIFT;
 }
 
+static uint8_t vp_req_get_ack_status(uint32_t req_flags)
+{
+    return (uint8_t)((req_flags & VP_REQ_ACK_STATUS_MASK) >> VP_REQ_ACK_STATUS_SHIFT);
+}
+
+static uint16_t vp_req_get_ack_seq(uint32_t req_flags)
+{
+    return (uint16_t)((req_flags & VP_REQ_ACK_SEQ_MASK) >> VP_REQ_ACK_SEQ_SHIFT);
+}
+
 static uint32_t vp_state_get_render_tag(uint32_t req_flags, const vp_state_snapshot_t *snap)
 {
     if ((req_flags & VP_REQ_DATA) != 0U) {
@@ -84,6 +94,12 @@ static uint32_t vp_state_get_render_tag(uint32_t req_flags, const vp_state_snaps
 static int i2c_req_is_status_request(uint32_t req_flags)
 {
     return req_flags == 0U;
+}
+
+static int i2c_req_is_volume_ack_command(uint32_t req_flags)
+{
+    uint32_t unknown_bits = req_flags & ~(VP_REQ_ACK_CMD | VP_REQ_ACK_STATUS_MASK | VP_REQ_ACK_SEQ_MASK);
+    return ((req_flags & VP_REQ_ACK_CMD) != 0U) && (unknown_bits == 0U);
 }
 
 static int i2c_req_is_param_request(uint32_t req_flags)
@@ -163,7 +179,11 @@ static size_t vp_param_payload_info(uint32_t param_bit,
     }
 
     if (param_bit == VP_REQ_VOL) {
-        *payload = &snap->volume;
+        static uint8_t volume_payload[VP_PAYLOAD_VOL_LEN];
+        volume_payload[0] = snap->volume;
+        volume_payload[1] = (uint8_t)(snap->volume_seq & 0xFFU);
+        volume_payload[2] = (uint8_t)((snap->volume_seq >> 8) & 0xFFU);
+        *payload = volume_payload;
         *clear_mask = VP_FLAG_VOL;
         return VP_PAYLOAD_VOL_LEN;
     }
@@ -190,6 +210,18 @@ static size_t vp_param_payload_info(uint32_t param_bit,
         *payload = (const uint8_t *)snap->param2;
         *clear_mask = VP_FLAG_P2;
         return VP_PAYLOAD_P2_LEN;
+    }
+
+    if (param_bit == VP_REQ_VOL_STATUS) {
+        static uint8_t vol_status_payload[VP_PAYLOAD_VOL_STATUS_LEN];
+        vol_status_payload[0] = snap->volume_status;
+        vol_status_payload[1] = (uint8_t)(snap->volume_seq & 0xFFU);
+        vol_status_payload[2] = (uint8_t)((snap->volume_seq >> 8) & 0xFFU);
+        vol_status_payload[3] = (uint8_t)(snap->volume_ack_seq & 0xFFU);
+        vol_status_payload[4] = (uint8_t)((snap->volume_ack_seq >> 8) & 0xFFU);
+        *payload = vol_status_payload;
+        *clear_mask = VP_FLAG_VOL_STATUS;
+        return VP_PAYLOAD_VOL_STATUS_LEN;
     }
 
     *payload = NULL;
@@ -268,6 +300,16 @@ static esp_err_t i2c_render_response(uint32_t req_flags, const vp_state_snapshot
     return ESP_ERR_INVALID_ARG;
 }
 
+static esp_err_t i2c_handle_write_command(uint32_t req_flags)
+{
+    if (!i2c_req_is_volume_ack_command(req_flags)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    vp_state_ack_volume(vp_req_get_ack_seq(req_flags), vp_req_get_ack_status(req_flags));
+    return ESP_OK;
+}
+
 static void i2c_bridge_task(void *arg)
 {
     (void)arg;
@@ -276,6 +318,7 @@ static void i2c_bridge_task(void *arg)
         .request = UINT32_MAX,
         .state_tag = UINT32_MAX,
     };
+    uint32_t last_write_req = UINT32_MAX;
 
     while (1) {
         uint32_t req_flags = 0U;
@@ -289,6 +332,19 @@ static void i2c_bridge_task(void *arg)
             vTaskDelay(pdMS_TO_TICKS(I2C_TASK_PERIOD_MS));
             continue;
         }
+
+        if (i2c_req_is_volume_ack_command(req_flags)) {
+            if (req_flags != last_write_req) {
+                err = i2c_handle_write_command(req_flags);
+                if (err != ESP_OK && err != ESP_ERR_INVALID_ARG) {
+                    ESP_LOGW(TAG, "I2C failed (write or read): %s", esp_err_to_name(err));
+                }
+                last_write_req = req_flags;
+            }
+            vTaskDelay(pdMS_TO_TICKS(I2C_TASK_PERIOD_MS));
+            continue;
+        }
+        last_write_req = UINT32_MAX;
 
         vp_state_get_snapshot(&snap);
         i2c_render_key_t next_key = {

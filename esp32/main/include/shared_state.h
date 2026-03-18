@@ -43,6 +43,9 @@ typedef struct {
     uint32_t seq;
     uint8_t volume;
     uint8_t battery;
+    uint16_t volume_seq;
+    uint16_t volume_ack_seq;
+    uint8_t volume_status;
     char ble_addr[VP_BLE_ADDR_MAX_LEN];
     char param1[VP_PARAM_MAX_LEN];
     char param2[VP_PARAM_MAX_LEN];
@@ -72,6 +75,8 @@ void vp_state_init(void);
  */
 /**************************************************************************************************/
 void vp_state_set_volume(uint8_t volume);
+
+void vp_state_ack_volume(uint16_t volume_seq, uint8_t status);
 
 /**************************************************************************************************/
 /**

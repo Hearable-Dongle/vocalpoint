@@ -225,6 +225,10 @@ class _VocalPointShellState extends State<VocalPointShell> {
   String? _pendingOutputId;
   double _lastNonMutedVolume = 50;
 
+  static const String _msgVolumeFetchChangeFailed =
+      'Failed to fetch/change volume';
+  static const String _msgNotConnectedYet = 'Not connected to device yet';
+
   Color get _highlightColor => AppState.highlightColor.value;
   Color get _highlightBright => shiftLightness(_highlightColor, 0.14);
 
@@ -638,9 +642,9 @@ class _VocalPointShellState extends State<VocalPointShell> {
     final deviceId = AppState.connectedDeviceId.value;
     if (deviceId == null) {
       if (showErrors) {
-        _showToast('No VocalPoint device connected');
+        _showToast(_msgNotConnectedYet);
       }
-      return;
+      throw StateError('No connected device');
     }
 
     final serviceUuid = AppState.volumeServiceUuid.value.trim();
@@ -648,7 +652,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
       if (showErrors) {
         _showToast('Service/characteristic UUID is missing');
       }
-      return;
+      throw StateError('Service/characteristic UUID is missing');
     }
 
     try {
@@ -664,8 +668,9 @@ class _VocalPointShellState extends State<VocalPointShell> {
       }
     } catch (error) {
       if (showErrors) {
-        _showToast('Write failed: $error');
+        _showToast(_msgVolumeFetchChangeFailed);
       }
+      rethrow;
     }
   }
 
@@ -684,16 +689,93 @@ class _VocalPointShellState extends State<VocalPointShell> {
   }
 
   Future<void> _writeVolumeToDevice({bool showSuccess = false}) async {
+    final previousStatus = await _readVolumePipelineStatus(showErrors: false);
     final volume = AppState.isMuted.value
         ? 0
         : AppState.volume.value.round().clamp(0, 100);
-    await _writeCharacteristic(
-      charUuid: AppState.volumeCharUuid.value,
-      payload: Uint8List.fromList(<int>[volume]),
-      showSuccess: showSuccess,
-      showErrors: showSuccess,
-      successMessage: 'Sent volume=$volume',
-    );
+    try {
+      await _writeCharacteristic(
+        charUuid: AppState.volumeCharUuid.value,
+        payload: Uint8List.fromList(<int>[volume]),
+        showSuccess: false,
+        showErrors: true,
+      );
+      final received = await _awaitPiVolumeReceipt(
+        previousSeq: previousStatus?.volumeSeq ?? 0,
+      );
+      if (!received) {
+        _showToast(_msgVolumeFetchChangeFailed);
+        return;
+      }
+
+      if (showSuccess) {
+        _showToast('Sent volume=$volume');
+      }
+    } catch (_) {
+      // _writeCharacteristic already surfaces the user-facing error.
+    }
+  }
+
+  Future<_VolumePipelineStatus?> _readVolumePipelineStatus({
+    bool showErrors = true,
+  }) async {
+    final deviceId = AppState.connectedDeviceId.value;
+    if (deviceId == null) {
+      if (showErrors) {
+        _showToast(_msgNotConnectedYet);
+      }
+      return null;
+    }
+
+    final serviceUuid = AppState.volumeServiceUuid.value.trim();
+    final charUuid = AppState.metadataCharUuid.value.trim();
+    if (serviceUuid.isEmpty || charUuid.isEmpty) {
+      if (showErrors) {
+        _showToast(_msgVolumeFetchChangeFailed);
+      }
+      return null;
+    }
+
+    try {
+      final value = await UniversalBle.readValue(
+        deviceId,
+        serviceUuid,
+        charUuid,
+      );
+      if (value.isEmpty) {
+        return null;
+      }
+      return _VolumePipelineStatus.fromMetadata(
+        utf8.decode(value, allowMalformed: true),
+      );
+    } catch (_) {
+      if (showErrors) {
+        _showToast(_msgVolumeFetchChangeFailed);
+      }
+      return null;
+    }
+  }
+
+  Future<bool> _awaitPiVolumeReceipt({required int previousSeq}) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 2));
+
+    while (DateTime.now().isBefore(deadline)) {
+      final status = await _readVolumePipelineStatus(showErrors: false);
+      if (status != null && status.volumeSeq > previousSeq) {
+        if (status.status == 'FAILED') {
+          return false;
+        }
+
+        if (status.volumeAckSeq >= status.volumeSeq &&
+            (status.status == 'RECEIVED' || status.status == 'APPLIED')) {
+          return true;
+        }
+      }
+
+      await Future<void>.delayed(const Duration(milliseconds: 140));
+    }
+
+    return false;
   }
 
   Future<void> _syncSelectedOutputToDevice({bool showSuccess = true}) async {
@@ -2329,6 +2411,52 @@ class _MetricChip extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _VolumePipelineStatus {
+  final String status;
+  final int volumeSeq;
+  final int volumeAckSeq;
+
+  const _VolumePipelineStatus({
+    required this.status,
+    required this.volumeSeq,
+    required this.volumeAckSeq,
+  });
+
+  factory _VolumePipelineStatus.fromMetadata(String text) {
+    var status = 'IDLE';
+    var volumeSeq = 0;
+    var volumeAckSeq = 0;
+
+    for (final token in text.split(';')) {
+      final parts = token.split('=');
+      if (parts.length != 2) {
+        continue;
+      }
+
+      final key = parts[0].trim().toUpperCase();
+      final value = parts[1].trim();
+
+      switch (key) {
+        case 'VOL_STATUS':
+          status = value.toUpperCase();
+          break;
+        case 'VOL_SEQ':
+          volumeSeq = int.tryParse(value) ?? 0;
+          break;
+        case 'VOL_ACK_SEQ':
+          volumeAckSeq = int.tryParse(value) ?? 0;
+          break;
+      }
+    }
+
+    return _VolumePipelineStatus(
+      status: status,
+      volumeSeq: volumeSeq,
+      volumeAckSeq: volumeAckSeq,
     );
   }
 }

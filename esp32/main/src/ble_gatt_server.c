@@ -28,6 +28,23 @@
 static const char *s_tag = "ble_gatt_server";
 static uint16_t s_batt_chr_handle;
 
+static const char *volume_status_to_string(uint8_t status)
+{
+    switch (status) {
+        case VP_VOLUME_STATUS_PENDING:
+            return "PENDING";
+        case VP_VOLUME_STATUS_RECEIVED:
+            return "RECEIVED";
+        case VP_VOLUME_STATUS_APPLIED:
+            return "APPLIED";
+        case VP_VOLUME_STATUS_FAILED:
+            return "FAILED";
+        case VP_VOLUME_STATUS_IDLE:
+        default:
+            return "IDLE";
+    }
+}
+
 static int battery_access_cb(uint16_t conn_handle,
                              uint16_t attr_handle,
                              struct ble_gatt_access_ctxt *ctxt,
@@ -93,12 +110,15 @@ static int metadata_access_cb(uint16_t conn_handle,
         vp_state_snapshot_t snapshot;
         vp_state_get_snapshot(&snapshot);
 
-        char text[96];
+        char text[160];
         int len = snprintf(text,
                            sizeof(text),
-                           "P1=%s;P2=%s",
+                           "P1=%s;P2=%s;VOL_STATUS=%s;VOL_SEQ=%u;VOL_ACK_SEQ=%u",
                            snapshot.param1,
-                           snapshot.param2);
+                           snapshot.param2,
+                           volume_status_to_string(snapshot.volume_status),
+                           (unsigned int)snapshot.volume_seq,
+                           (unsigned int)snapshot.volume_ack_seq);
         if (len < 0) {
             return BLE_ATT_ERR_UNLIKELY;
         }

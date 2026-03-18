@@ -31,16 +31,27 @@ VP_FLAG_BAT     = 1 << 3
 VP_FLAG_ADDR    = 1 << 4
 VP_FLAG_P1      = 1 << 5
 VP_FLAG_P2      = 1 << 6
+VP_FLAG_VOL_STATUS = 1 << 7
 
+VP_REQ_ACK_CMD = 1 << 0
 VP_REQ_DATA = 1 << 1
 VP_REQ_VOL  = 1 << 2
 VP_REQ_BAT  = 1 << 3
 VP_REQ_ADDR = 1 << 4
 VP_REQ_P1   = 1 << 5
 VP_REQ_P2   = 1 << 6
+VP_REQ_VOL_STATUS = 1 << 7
+VP_REQ_ACK_STATUS_SHIFT = 1
+VP_REQ_ACK_SEQ_SHIFT = 8
 VP_REQ_OFFSET_SHIFT = 24
 
-VP_PARAM_BITS = VP_FLAG_VOL | VP_FLAG_BAT | VP_FLAG_ADDR | VP_FLAG_P1 | VP_FLAG_P2
+VP_PARAM_BITS = VP_FLAG_VOL | VP_FLAG_BAT | VP_FLAG_ADDR | VP_FLAG_P1 | VP_FLAG_P2 | VP_FLAG_VOL_STATUS
+
+VP_VOLUME_STATUS_IDLE = 0
+VP_VOLUME_STATUS_PENDING = 1
+VP_VOLUME_STATUS_RECEIVED = 2
+VP_VOLUME_STATUS_APPLIED = 3
+VP_VOLUME_STATUS_FAILED = 4
 
 VP_STATUS_LEN = 4
 VP_RESP_HDR_LEN = 4
@@ -50,11 +61,12 @@ VP_RESP_MAILBOX_LEN = 28
 VP_RESP_PAYLOAD_MAX = VP_RESP_MAILBOX_LEN - VP_RESP_HDR_LEN
 
 PARAM_PAYLOAD_SIZES: dict[int, int] = {
-    VP_FLAG_VOL:  1,
+    VP_FLAG_VOL:  3,
     VP_FLAG_BAT:  1,
     VP_FLAG_ADDR: 40,
     VP_FLAG_P1:   32,
     VP_FLAG_P2:   32,
+    VP_FLAG_VOL_STATUS: 5,
 }
 
 PARAM_FLAG_TO_FIELD: dict[int, str] = {
@@ -63,6 +75,7 @@ PARAM_FLAG_TO_FIELD: dict[int, str] = {
     VP_FLAG_ADDR: "ble_addr",
     VP_FLAG_P1:   "param1",
     VP_FLAG_P2:   "param2",
+    VP_FLAG_VOL_STATUS: "volume_status",
 }
 
 SETTLE_SEC = 0.020
@@ -75,6 +88,9 @@ PARAM_RETRY_COUNT = 3
 class DeviceState:
     volume: int = 0
     battery: int = 0
+    volume_seq: int = 0
+    volume_ack_seq: int = 0
+    volume_status: int = VP_VOLUME_STATUS_IDLE
     ble_addr: str = ""
     param1: str = ""
     param2: str = ""
@@ -101,6 +117,14 @@ def _expect_exact_flags(resp_flags: int, expected_flags: int, kind: str) -> None
 
 def _req_with_offset(param_bit: int, offset: int) -> int:
     return VP_REQ_DATA | param_bit | ((offset & 0xFF) << VP_REQ_OFFSET_SHIFT)
+
+
+def _ack_request(seq: int, status: int) -> int:
+    return (
+        VP_REQ_ACK_CMD
+        | ((status & 0x7) << VP_REQ_ACK_STATUS_SHIFT)
+        | ((seq & 0xFFFF) << VP_REQ_ACK_SEQ_SHIFT)
+    )
 
 
 def read_status(bus: SMBus, address: int) -> int:
@@ -166,7 +190,8 @@ def _decode_string(raw: bytes) -> str:
 
 def apply_param(state: DeviceState, param_bit: int, raw: bytes) -> None:
     if param_bit == VP_FLAG_VOL:
-        state.volume = _decode_u8(raw)
+        state.volume = raw[0]
+        state.volume_seq = int.from_bytes(raw[1:3], "little")
     elif param_bit == VP_FLAG_BAT:
         state.battery = _decode_u8(raw)
     elif param_bit == VP_FLAG_ADDR:
@@ -175,6 +200,14 @@ def apply_param(state: DeviceState, param_bit: int, raw: bytes) -> None:
         state.param1 = _decode_string(raw)
     elif param_bit == VP_FLAG_P2:
         state.param2 = _decode_string(raw)
+    elif param_bit == VP_FLAG_VOL_STATUS:
+        state.volume_status = raw[0]
+        state.volume_seq = int.from_bytes(raw[1:3], "little")
+        state.volume_ack_seq = int.from_bytes(raw[3:5], "little")
+
+
+def write_volume_ack(bus: SMBus, address: int, seq: int, status: int) -> None:
+    _write_request(bus, address, _ack_request(seq, status))
 
 
 def main() -> int:
@@ -216,7 +249,14 @@ def main() -> int:
                     pending_dirty |= (flags & VP_PARAM_BITS)
 
                 changed = False
-                for param_bit in (VP_FLAG_VOL, VP_FLAG_BAT, VP_FLAG_ADDR, VP_FLAG_P1, VP_FLAG_P2):
+                for param_bit in (
+                    VP_FLAG_VOL,
+                    VP_FLAG_BAT,
+                    VP_FLAG_ADDR,
+                    VP_FLAG_P1,
+                    VP_FLAG_P2,
+                    VP_FLAG_VOL_STATUS,
+                ):
                     if not (pending_dirty & param_bit):
                         continue
 
@@ -224,10 +264,21 @@ def main() -> int:
                         raw = read_param(bus, args.address, param_bit)
                         apply_param(state, param_bit, raw)
                         pending_dirty &= ~param_bit
+                        if (
+                            param_bit == VP_FLAG_VOL
+                            and state.volume_seq > state.volume_ack_seq
+                        ):
+                            write_volume_ack(
+                                bus,
+                                args.address,
+                                state.volume_seq,
+                                VP_VOLUME_STATUS_RECEIVED,
+                            )
+                            state.volume_ack_seq = state.volume_seq
+                            state.volume_status = VP_VOLUME_STATUS_RECEIVED
                         changed = True
                     except (ValueError, OSError) as exc:
-                        field_name = PARAM_FLAG_TO_FIELD.get(param_bit, f"0x{param_bit:02X}")
-                        print(f"param fetch error ({field_name}): {exc}")
+                        print(f"I2C failed (write or read): {exc}")
 
                     break
 
@@ -238,7 +289,9 @@ def main() -> int:
                             print(json.dumps(current, separators=(",", ":")))
                         else:
                             print(
-                                f"volume={state.volume} battery={state.battery} "
+                                f"volume={state.volume} volume_seq={state.volume_seq} "
+                                f"volume_ack_seq={state.volume_ack_seq} volume_status={state.volume_status} "
+                                f"battery={state.battery} "
                                 f"addr='{state.ble_addr}' "
                                 f"p1='{state.param1}' p2='{state.param2}'"
                             )
@@ -248,7 +301,7 @@ def main() -> int:
                 print("\nStopped.")
                 return 0
             except OSError as exc:
-                print(f"I2C error: {exc}")
+                print(f"I2C failed (write or read): {exc}")
             except Exception as exc:
                 print(f"unexpected error: {exc}")
 
