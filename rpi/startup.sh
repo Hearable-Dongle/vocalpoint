@@ -6,7 +6,7 @@ cd "$SCRIPT_DIR"
 
 # Check for missing dependencies
 echo "Checking dependencies..."
-REQUIRED_CMDS=("pactl" "pw-loopback" "bluetoothctl" "pkill" "sudo")
+REQUIRED_CMDS=("pactl" "pw-loopback" "bluetoothd" "pkill" "sudo")
 MISSING=()
 
 for cmd in "${REQUIRED_CMDS[@]}"; do
@@ -22,6 +22,9 @@ if [ ${#MISSING[@]} -gt 0 ]; then
     sudo apt-get update
     sudo apt-get install -y \
         bluez \
+        bluez-tools \
+        dbus \
+        python3-dbus \
         pulseaudio-utils \
         pipewire \
         procps
@@ -42,6 +45,10 @@ if [ ${#MISSING[@]} -gt 0 ]; then
 else
     echo "All dependencies are already installed."
 fi
+
+# Ensure Bluetooth service is running
+echo "Ensuring Bluetooth service is running..."
+sudo systemctl start bluetooth
 
 echo "Starting application..."
 python3 main.py

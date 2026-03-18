@@ -15,9 +15,12 @@ class Session_Config():
     __deps: list[str] = [
         "pactl",
         "pw-loopback",
-        "bluetoothctl",
+        "bluetoothd",
         "pkill",
         "sudo",
+    ]
+    __python_deps: list[str] = [
+        "dbus",
     ]
 
     def __init__(self) -> None:
@@ -40,9 +43,18 @@ class Session_Config():
         self.__verify_deps()
 
     def __verify_deps(self) -> None:
+        # Check system dependencies
         for dep in self.__deps:
             if not shutil.which(dep):
                 raise RuntimeError(f"Missing required dependency: {dep}")
+        
+        # Check Python dependencies
+        import importlib
+        for py_dep in self.__python_deps:
+            try:
+                importlib.import_module(py_dep)
+            except ImportError:
+                raise RuntimeError(f"Missing required Python package: {py_dep}")
 
     @property
     def sink(self):
