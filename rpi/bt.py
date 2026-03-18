@@ -1,28 +1,46 @@
 # Standard imports
 import subprocess
 import time
+import select
 
 class BT_Interface():
 
     def __init__(self) -> None:
-        pass
-
-    def __execute_command(self, cmd: str, timeout: int) -> str:
-        # Execute bluetoothctl command with provided input and return output
-        result = subprocess.run(
+        # Start bluetoothctl process
+        self.__process = subprocess.Popen(
             ["bluetoothctl"],
-            input = cmd,
-            text = True,
-            capture_output = True,
-            timeout = timeout,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
         )
+        # Consume initial prompt
+        self.__process.stdout.readline()
 
-        # Verify command executed successfully
-        if result.returncode != 0:
-            raise RuntimeError(f"Bluetoothctl command failed: {result.stderr.strip()}")
-        
-        # Return command output
-        return result.stdout.strip()
+    def __execute_command(self, cmd: str) -> str:
+        if self.__process.stdin is None or self.__process.stdout is None:
+            raise RuntimeError("Process pipes not available")
+
+        self.__process.stdin.write(cmd + "\n")
+        self.__process.stdin.flush()
+
+        output = []
+        line_timeout = 1.0  # seconds to wait for each line
+
+        while True:
+            ready, _, _ = select.select([self.__process.stdout], [], [], line_timeout)
+
+            if not ready:
+                # No more output within timeout
+                break
+
+            line = self.__process.stdout.readline().strip()
+            if line.startswith("[bluetoothctl]>"):
+                break
+            output.append(line)
+
+        return "\n".join(output)
     
     def power_on(self) -> bool:
         # Set return code to False by default
@@ -34,10 +52,10 @@ class BT_Interface():
         
         try:
             # Execute commands
-            _ = self.__execute_command(on_cmd, timeout = 5)
-            output = self.__execute_command(show_cmd, timeout = 5)
-            print(output)
+            _ = self.__execute_command(on_cmd)
+            output = self.__execute_command(show_cmd)
 
+            # Verify output
             if "Powered: yes" in output:
                 ret_code = True
 
@@ -49,22 +67,28 @@ class BT_Interface():
         return ret_code
 
     def power_off(self) -> bool:
+        # Set return code to False by default
+        ret_code = False
+
         # Build bluetoothctl command to power off Bluetooth
         off_cmd = "power off\n"
         show_cmd = "show\n"
         
         try:
-            # Execute command
-            output = self.__execute_command(show_cmd, timeout = 5)
-            print(output)
-            self.__execute_command(off_cmd, timeout = 5)
+            # Execute commands
+            _ = self.__execute_command(off_cmd)
+            output = self.__execute_command(show_cmd)
 
-            # Return True if command executed successfully
-            return True
+            # Verify output
+            if "Powered: no" in output:
+                ret_code = True
 
         except RuntimeError:
-            # Return False if command failed
-            return False
+            # Ignore error and return False if command failed
+            pass
+
+        # Return False if command failed and True if command executed successfully
+        return ret_code
         
     def pair(self, mac: str) -> bool:
         # Build bluetoothctl command to pair with device
@@ -72,7 +96,7 @@ class BT_Interface():
         
         try:
             # Execute command
-            self.__execute_command(cmd, timeout = 10)
+            self.__execute_command(cmd)
 
             # Return True if command executed successfully
             return True
@@ -87,7 +111,7 @@ class BT_Interface():
         
         try:
             # Execute command
-            self.__execute_command(cmd, timeout = 10)
+            self.__execute_command(cmd)
 
             # Return True if command executed successfully
             return True
@@ -102,7 +126,7 @@ class BT_Interface():
         
         try:
             # Execute command
-            self.__execute_command(cmd, timeout = 10)
+            self.__execute_command(cmd)
 
             # Return True if command executed successfully
             return True
@@ -117,7 +141,7 @@ class BT_Interface():
         
         try:
             # Execute command
-            self.__execute_command(cmd, timeout = 10)
+            self.__execute_command(cmd)
 
             # Return True if command executed successfully
             return True
@@ -132,7 +156,7 @@ class BT_Interface():
         
         try:
             # Execute command
-            self.__execute_command(cmd, timeout = 10)
+            self.__execute_command(cmd)
 
             # Return True if command executed successfully
             return True
@@ -148,7 +172,7 @@ class BT_Interface():
         
         try:
             # Execute command
-            self.__execute_command(cmd, timeout = 10)
+            self.__execute_command(cmd)
 
             # Return True if command executed successfully
             return True
@@ -163,7 +187,7 @@ class BT_Interface():
         
         try:
             # Execute command
-            output = self.__execute_command(cmd, timeout = 10)
+            output = self.__execute_command(cmd)
 
             # Return device info output if command executed successfully
             return output
@@ -178,7 +202,7 @@ class BT_Interface():
         
         try:
             # Execute command
-            output = self.__execute_command(cmd, timeout = 10)
+            output = self.__execute_command(cmd)
 
             # Parse output into dictionary
             devices_dict = {}
