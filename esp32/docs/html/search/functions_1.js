@@ -1,9 +1,0 @@
-var searchData=
-[
-  ['ble_5fgatt_5fserver_5finit_0',['ble_gatt_server_init',['../ble__gatt__server_8c.html#af1a15cbf1367549114b25bf1fdbc73c5',1,'ble_gatt_server_init(void):&#160;ble_gatt_server.c'],['../ble__gatt__server_8h.html#af1a15cbf1367549114b25bf1fdbc73c5',1,'ble_gatt_server_init(void):&#160;ble_gatt_server.c']]],
-  ['ble_5fgatt_5fserver_5fnotify_5fbattery_1',['ble_gatt_server_notify_battery',['../ble__gatt__server_8c.html#a6794af454eb427b087eb3df8cae63a90',1,'ble_gatt_server_notify_battery(uint16_t conn_handle):&#160;ble_gatt_server.c'],['../ble__gatt__server_8h.html#a6794af454eb427b087eb3df8cae63a90',1,'ble_gatt_server_notify_battery(uint16_t conn_handle):&#160;ble_gatt_server.c']]],
-  ['ble_5fgatt_5fserver_5fregister_5fcb_2',['ble_gatt_server_register_cb',['../ble__gatt__server_8c.html#abfee624101a311a928e750aa2dc559a4',1,'ble_gatt_server_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg):&#160;ble_gatt_server.c'],['../ble__gatt__server_8h.html#abfee624101a311a928e750aa2dc559a4',1,'ble_gatt_server_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg):&#160;ble_gatt_server.c']]],
-  ['ble_5fgatt_5fserver_5fset_5fbattery_3',['ble_gatt_server_set_battery',['../ble__gatt__server_8c.html#a99723a4ecd257aff5b27a67050277c0e',1,'ble_gatt_server_set_battery(uint8_t pct):&#160;ble_gatt_server.c'],['../ble__gatt__server_8h.html#a99723a4ecd257aff5b27a67050277c0e',1,'ble_gatt_server_set_battery(uint8_t pct):&#160;ble_gatt_server.c']]],
-  ['ble_5fmanager_5finit_4',['ble_manager_init',['../ble__manager_8c.html#a0e55afff5c0665e50069b09d2af4f6d9',1,'ble_manager_init(void):&#160;ble_manager.c'],['../ble__manager_8h.html#a0e55afff5c0665e50069b09d2af4f6d9',1,'ble_manager_init(void):&#160;ble_manager.c']]],
-  ['ble_5fstore_5fconfig_5finit_5',['ble_store_config_init',['../ble__manager_8c.html#a931b25a8797246e24c60c4a3abae8905',1,'ble_manager.c']]]
-];
