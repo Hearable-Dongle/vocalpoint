@@ -1,0 +1,315 @@
+\doxysection{main/include/i2c\+\_\+protocol.h File Reference}
+\hypertarget{i2c__protocol_8h}{}\label{i2c__protocol_8h}\index{main/include/i2c\_protocol.h@{main/include/i2c\_protocol.h}}
+
+
+Vocal\+Point ESP32 ↔ RPi I2C request/response protocol definitions.  
+
+
+{\ttfamily \#include "{}soc/soc\+\_\+caps.\+h"{}}\newline
+\doxysubsubsection*{Macros}
+\begin{DoxyCompactItemize}
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_ad5d39935ec3e84b6ea06c110ad088e4b}{VP\+\_\+\+FLAG\+\_\+\+CHANGED}}~(1U $<$$<$ 0)
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_ad22de2b4282d42503a668fa2b7f46a10}{VP\+\_\+\+FLAG\+\_\+\+VOL}}~(1U $<$$<$ 2)
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_a238d2d663007ceeef8a3f14b4e34cf34}{VP\+\_\+\+FLAG\+\_\+\+BAT}}~(1U $<$$<$ 3)
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_a3f784330a7c1a67e3daa366fb0ecaa2a}{VP\+\_\+\+FLAG\+\_\+\+ADDR}}~(1U $<$$<$ 4)
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_a6138a328f43aedaeebc9d69c8ef1f9fc}{VP\+\_\+\+FLAG\+\_\+\+P1}}~(1U $<$$<$ 5)
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_a84a8634c7a5dc3c41b1f344a698a6684}{VP\+\_\+\+FLAG\+\_\+\+P2}}~(1U $<$$<$ 6)
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_a8091e52a51f1b49722fec73409114eaa}{VP\+\_\+\+REQ\+\_\+\+DATA}}~(1U $<$$<$ 1)
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_a86884a8cf110c2232fca4694d4978424}{VP\+\_\+\+REQ\+\_\+\+VOL}}~(1U $<$$<$ 2)
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_aad998465b9db6fecc1da00b036cddae2}{VP\+\_\+\+REQ\+\_\+\+BAT}}~(1U $<$$<$ 3)
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_ad0d2f8cfa8cb6b28f880f6f956cb2d26}{VP\+\_\+\+REQ\+\_\+\+ADDR}}~(1U $<$$<$ 4)
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_ae555c9871d4c8f0fb16cc92529a81af5}{VP\+\_\+\+REQ\+\_\+\+P1}}~(1U $<$$<$ 5)
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_a4463ba7e4e7641f16790c917d515b12a}{VP\+\_\+\+REQ\+\_\+\+P2}}~(1U $<$$<$ 6)
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_abae2f9c4ee81ce6c8c137b1279cce871}{VP\+\_\+\+REQ\+\_\+\+OFFSET\+\_\+\+SHIFT}}~24U
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_a162b620c0ccc566283a29aff70f39659}{VP\+\_\+\+REQ\+\_\+\+OFFSET\+\_\+\+MASK}}~(0x\+FFU $<$$<$ \mbox{\hyperlink{i2c__protocol_8h_abae2f9c4ee81ce6c8c137b1279cce871}{VP\+\_\+\+REQ\+\_\+\+OFFSET\+\_\+\+SHIFT}})
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_ac0a07d196ce55036bd0624b7d8cc2527}{VP\+\_\+\+PARAM\+\_\+\+BITS\+\_\+\+MASK}}~(\mbox{\hyperlink{i2c__protocol_8h_ad22de2b4282d42503a668fa2b7f46a10}{VP\+\_\+\+FLAG\+\_\+\+VOL}} \texorpdfstring{$\vert$}{|} \mbox{\hyperlink{i2c__protocol_8h_a238d2d663007ceeef8a3f14b4e34cf34}{VP\+\_\+\+FLAG\+\_\+\+BAT}} \texorpdfstring{$\vert$}{|} \mbox{\hyperlink{i2c__protocol_8h_a3f784330a7c1a67e3daa366fb0ecaa2a}{VP\+\_\+\+FLAG\+\_\+\+ADDR}} \texorpdfstring{$\vert$}{|} \mbox{\hyperlink{i2c__protocol_8h_a6138a328f43aedaeebc9d69c8ef1f9fc}{VP\+\_\+\+FLAG\+\_\+\+P1}} \texorpdfstring{$\vert$}{|} \mbox{\hyperlink{i2c__protocol_8h_a84a8634c7a5dc3c41b1f344a698a6684}{VP\+\_\+\+FLAG\+\_\+\+P2}})
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_aa9617ca4a2fd14fab3143d551c66bf6b}{VP\+\_\+\+PAYLOAD\+\_\+\+VOL\+\_\+\+LEN}}~1U
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_aab61da9d353745af9d49eadf4accbb75}{VP\+\_\+\+PAYLOAD\+\_\+\+BAT\+\_\+\+LEN}}~1U
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_abd796d8097698f800326a2d810d07970}{VP\+\_\+\+PAYLOAD\+\_\+\+ADDR\+\_\+\+LEN}}~40U
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_aa00c73ad44d3b945c3bfefaeb94d1a8a}{VP\+\_\+\+PAYLOAD\+\_\+\+P1\+\_\+\+LEN}}~32U
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_a19b639419a640ceaae7899ea71e5d466}{VP\+\_\+\+PAYLOAD\+\_\+\+P2\+\_\+\+LEN}}~32U
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_ab947f6823da0ef32a915c14b8db1bba4}{VP\+\_\+\+STATUS\+\_\+\+LEN}}~4U   /\texorpdfstring{$\ast$}{*} Status or request register is always 4 bytes \texorpdfstring{$\ast$}{*}/
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_a086be88f8412bdff93eae667157c9d85}{VP\+\_\+\+RESP\+\_\+\+HDR\+\_\+\+LEN}}~4U   /\texorpdfstring{$\ast$}{*} Response header (flags) prefix on param replies \texorpdfstring{$\ast$}{*}/
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_a90364cceb8e77f6af450bc25f76abd09}{VP\+\_\+\+RESP\+\_\+\+VOL\+\_\+\+LEN}}~(\mbox{\hyperlink{i2c__protocol_8h_a086be88f8412bdff93eae667157c9d85}{VP\+\_\+\+RESP\+\_\+\+HDR\+\_\+\+LEN}} + \mbox{\hyperlink{i2c__protocol_8h_aa9617ca4a2fd14fab3143d551c66bf6b}{VP\+\_\+\+PAYLOAD\+\_\+\+VOL\+\_\+\+LEN}})
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_afdfecfbcf03082a8d2e33bce83702da8}{VP\+\_\+\+RESP\+\_\+\+BAT\+\_\+\+LEN}}~(\mbox{\hyperlink{i2c__protocol_8h_a086be88f8412bdff93eae667157c9d85}{VP\+\_\+\+RESP\+\_\+\+HDR\+\_\+\+LEN}} + \mbox{\hyperlink{i2c__protocol_8h_aab61da9d353745af9d49eadf4accbb75}{VP\+\_\+\+PAYLOAD\+\_\+\+BAT\+\_\+\+LEN}})
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_ad933adefd03ee4312fa01938abc97cd1}{VP\+\_\+\+RESP\+\_\+\+ADDR\+\_\+\+LEN}}~(\mbox{\hyperlink{i2c__protocol_8h_a086be88f8412bdff93eae667157c9d85}{VP\+\_\+\+RESP\+\_\+\+HDR\+\_\+\+LEN}} + \mbox{\hyperlink{i2c__protocol_8h_abd796d8097698f800326a2d810d07970}{VP\+\_\+\+PAYLOAD\+\_\+\+ADDR\+\_\+\+LEN}})
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_a2d2018c70d59329f56036a28763b3875}{VP\+\_\+\+RESP\+\_\+\+P1\+\_\+\+LEN}}~(\mbox{\hyperlink{i2c__protocol_8h_a086be88f8412bdff93eae667157c9d85}{VP\+\_\+\+RESP\+\_\+\+HDR\+\_\+\+LEN}} + \mbox{\hyperlink{i2c__protocol_8h_aa00c73ad44d3b945c3bfefaeb94d1a8a}{VP\+\_\+\+PAYLOAD\+\_\+\+P1\+\_\+\+LEN}})
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_a70f6939375c18fe4101fefadba5a31f4}{VP\+\_\+\+RESP\+\_\+\+P2\+\_\+\+LEN}}~(\mbox{\hyperlink{i2c__protocol_8h_a086be88f8412bdff93eae667157c9d85}{VP\+\_\+\+RESP\+\_\+\+HDR\+\_\+\+LEN}} + \mbox{\hyperlink{i2c__protocol_8h_a19b639419a640ceaae7899ea71e5d466}{VP\+\_\+\+PAYLOAD\+\_\+\+P2\+\_\+\+LEN}})
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_acc2cb57da400f54f698608b623317626}{VP\+\_\+\+I2\+C\+\_\+\+RAM\+\_\+\+LEN}}~SOC\+\_\+\+I2\+C\+\_\+\+FIFO\+\_\+\+LEN
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_a89d864cf466230aa16a7e6d20eb617bb}{VP\+\_\+\+REQ\+\_\+\+MAILBOX\+\_\+\+OFFSET}}~0U
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_a540a61ddcd6601700171086edfb66983}{VP\+\_\+\+REQ\+\_\+\+MAILBOX\+\_\+\+LEN}}~\mbox{\hyperlink{i2c__protocol_8h_ab947f6823da0ef32a915c14b8db1bba4}{VP\+\_\+\+STATUS\+\_\+\+LEN}}
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_a74ff9a1436cb6136be36d4ef7218a476}{VP\+\_\+\+RESP\+\_\+\+MAILBOX\+\_\+\+OFFSET}}~\mbox{\hyperlink{i2c__protocol_8h_a540a61ddcd6601700171086edfb66983}{VP\+\_\+\+REQ\+\_\+\+MAILBOX\+\_\+\+LEN}}
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_a4bad85a6c8ee6c3e8902ab3e3ae88bab}{VP\+\_\+\+RESP\+\_\+\+MAILBOX\+\_\+\+LEN}}~(\mbox{\hyperlink{i2c__protocol_8h_acc2cb57da400f54f698608b623317626}{VP\+\_\+\+I2\+C\+\_\+\+RAM\+\_\+\+LEN}} -\/ \mbox{\hyperlink{i2c__protocol_8h_a74ff9a1436cb6136be36d4ef7218a476}{VP\+\_\+\+RESP\+\_\+\+MAILBOX\+\_\+\+OFFSET}})
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_a6de264dd7dc330fb25ed7e8dfbc53648}{VP\+\_\+\+RESP\+\_\+\+PAYLOAD\+\_\+\+MAX}}~(\mbox{\hyperlink{i2c__protocol_8h_a4bad85a6c8ee6c3e8902ab3e3ae88bab}{VP\+\_\+\+RESP\+\_\+\+MAILBOX\+\_\+\+LEN}} -\/ \mbox{\hyperlink{i2c__protocol_8h_a086be88f8412bdff93eae667157c9d85}{VP\+\_\+\+RESP\+\_\+\+HDR\+\_\+\+LEN}})
+\item 
+\#define \mbox{\hyperlink{i2c__protocol_8h_ad50136799be90cb40303f899973cbc83}{VP\+\_\+\+SETTLE\+\_\+\+MS}}~20U
+\end{DoxyCompactItemize}
+
+
+\doxysubsection{Detailed Description}
+Vocal\+Point ESP32 ↔ RPi I2C request/response protocol definitions. 
+
+\hypertarget{i2c__protocol_8h_autotoc_md7}{}\doxysubsubsection{\texorpdfstring{Protocol overview}{Protocol overview}}\label{i2c__protocol_8h_autotoc_md7}
+All communication is master-\/initiated (RPi is master, ESP32 is slave). The RPi writes a 4-\/byte request into the ESP32\textquotesingle{}s I2C RAM mailbox, waits VP\+\_\+\+SETTLE\+\_\+\+MS, then reads the current response mailbox contents. There is no queued TX FIFO in this protocol\+: each new request overwrites the single current response.\hypertarget{i2c__protocol_8h_autotoc_md8}{}\doxysubsubsection{\texorpdfstring{Request register (RPi → ESP32, 4 bytes little-\/endian uint32\+\_\+t)}{Request register (RPi → ESP32, 4 bytes little-\/endian uint32\+\_\+t)}}\label{i2c__protocol_8h_autotoc_md8}
+bit 0 always 0 from the RPi (reserved for future ACK use) bit 1 VP\+\_\+\+REQ\+\_\+\+DATA set to 1 when requesting a parameter value bit 2 VP\+\_\+\+REQ\+\_\+\+VOL want current volume bit 3 VP\+\_\+\+REQ\+\_\+\+BAT want current battery level bit 4 VP\+\_\+\+REQ\+\_\+\+ADDR want current BLE address string bit 5 VP\+\_\+\+REQ\+\_\+\+P1 want current param1 string bit 6 VP\+\_\+\+REQ\+\_\+\+P2 want current param2 string bits 7-\/23 reserved, must be 0 bits 24-\/31 VP\+\_\+\+REQ\+\_\+\+OFFSET byte offset within the requested parameter payload
+
+Special case\+: request == 0x00000000 → read status register only.\hypertarget{i2c__protocol_8h_autotoc_md9}{}\doxysubsubsection{\texorpdfstring{Status register (ESP32 → RPi, 4 bytes little-\/endian uint32\+\_\+t)}{Status register (ESP32 → RPi, 4 bytes little-\/endian uint32\+\_\+t)}}\label{i2c__protocol_8h_autotoc_md9}
+bit 0 VP\+\_\+\+FLAG\+\_\+\+CHANGED 1 = at least one field has changed since last fetch bit 1 reserved (always 0) bit 2 VP\+\_\+\+FLAG\+\_\+\+VOL volume changed bit 3 VP\+\_\+\+FLAG\+\_\+\+BAT battery changed bit 4 VP\+\_\+\+FLAG\+\_\+\+ADDR BLE address changed bit 5 VP\+\_\+\+FLAG\+\_\+\+P1 param1 changed bit 6 VP\+\_\+\+FLAG\+\_\+\+P2 param2 changed bits 7-\/31 reserved / future error flags\hypertarget{i2c__protocol_8h_autotoc_md10}{}\doxysubsubsection{\texorpdfstring{Param response (ESP32 → RPi, chunked mailbox read)}{Param response (ESP32 → RPi, chunked mailbox read)}}\label{i2c__protocol_8h_autotoc_md10}
+\mbox{[}0..3\mbox{]} uint32\+\_\+t response flags (little-\/endian), echoing the request including VP\+\_\+\+REQ\+\_\+\+DATA, param bit, and VP\+\_\+\+REQ\+\_\+\+OFFSET \mbox{[}4..N\mbox{]} raw parameter data chunk
+
+Volume / battery\+: 1 byte (uint8\+\_\+t, 0-\/100) BLE address\+: 40 bytes (null-\/padded UTF-\/8 string) Param1 / param2\+: 32 bytes (null-\/padded UTF-\/8 string)\hypertarget{i2c__protocol_8h_autotoc_md11}{}\doxysubsubsection{\texorpdfstring{Mailbox layout (ESP32-\/\+C3 I2C RAM is 32 bytes total)}{Mailbox layout (ESP32-\/\+C3 I2C RAM is 32 bytes total)}}\label{i2c__protocol_8h_autotoc_md11}
+offset 0x00..0x03 request mailbox (4-\/byte request register) offset 0x04..0x1F response mailbox (28 bytes total)
+
+The response mailbox therefore carries at most 24 payload bytes per read\+: 4-\/byte header + up to 24 bytes payload = 28 bytes
+
+Long strings are fetched in multiple chunks by varying VP\+\_\+\+REQ\+\_\+\+OFFSET.
+
+\begin{DoxyVersion}{Version}
+0.\+1 
+\end{DoxyVersion}
+\begin{DoxyDate}{Date}
+2026-\/03-\/18
+\end{DoxyDate}
+\begin{DoxyCopyright}{Copyright}
+Copyright (c) 2026 
+\end{DoxyCopyright}
+
+
+\doxysubsection{Macro Definition Documentation}
+\Hypertarget{i2c__protocol_8h_a3f784330a7c1a67e3daa366fb0ecaa2a}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_FLAG\_ADDR@{VP\_FLAG\_ADDR}}
+\index{VP\_FLAG\_ADDR@{VP\_FLAG\_ADDR}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_FLAG\_ADDR}{VP\_FLAG\_ADDR}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_a3f784330a7c1a67e3daa366fb0ecaa2a} 
+\#define VP\+\_\+\+FLAG\+\_\+\+ADDR~(1U $<$$<$ 4)}
+
+\Hypertarget{i2c__protocol_8h_a238d2d663007ceeef8a3f14b4e34cf34}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_FLAG\_BAT@{VP\_FLAG\_BAT}}
+\index{VP\_FLAG\_BAT@{VP\_FLAG\_BAT}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_FLAG\_BAT}{VP\_FLAG\_BAT}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_a238d2d663007ceeef8a3f14b4e34cf34} 
+\#define VP\+\_\+\+FLAG\+\_\+\+BAT~(1U $<$$<$ 3)}
+
+\Hypertarget{i2c__protocol_8h_ad5d39935ec3e84b6ea06c110ad088e4b}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_FLAG\_CHANGED@{VP\_FLAG\_CHANGED}}
+\index{VP\_FLAG\_CHANGED@{VP\_FLAG\_CHANGED}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_FLAG\_CHANGED}{VP\_FLAG\_CHANGED}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_ad5d39935ec3e84b6ea06c110ad088e4b} 
+\#define VP\+\_\+\+FLAG\+\_\+\+CHANGED~(1U $<$$<$ 0)}
+
+\Hypertarget{i2c__protocol_8h_a6138a328f43aedaeebc9d69c8ef1f9fc}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_FLAG\_P1@{VP\_FLAG\_P1}}
+\index{VP\_FLAG\_P1@{VP\_FLAG\_P1}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_FLAG\_P1}{VP\_FLAG\_P1}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_a6138a328f43aedaeebc9d69c8ef1f9fc} 
+\#define VP\+\_\+\+FLAG\+\_\+\+P1~(1U $<$$<$ 5)}
+
+\Hypertarget{i2c__protocol_8h_a84a8634c7a5dc3c41b1f344a698a6684}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_FLAG\_P2@{VP\_FLAG\_P2}}
+\index{VP\_FLAG\_P2@{VP\_FLAG\_P2}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_FLAG\_P2}{VP\_FLAG\_P2}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_a84a8634c7a5dc3c41b1f344a698a6684} 
+\#define VP\+\_\+\+FLAG\+\_\+\+P2~(1U $<$$<$ 6)}
+
+\Hypertarget{i2c__protocol_8h_ad22de2b4282d42503a668fa2b7f46a10}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_FLAG\_VOL@{VP\_FLAG\_VOL}}
+\index{VP\_FLAG\_VOL@{VP\_FLAG\_VOL}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_FLAG\_VOL}{VP\_FLAG\_VOL}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_ad22de2b4282d42503a668fa2b7f46a10} 
+\#define VP\+\_\+\+FLAG\+\_\+\+VOL~(1U $<$$<$ 2)}
+
+\Hypertarget{i2c__protocol_8h_acc2cb57da400f54f698608b623317626}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_I2C\_RAM\_LEN@{VP\_I2C\_RAM\_LEN}}
+\index{VP\_I2C\_RAM\_LEN@{VP\_I2C\_RAM\_LEN}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_I2C\_RAM\_LEN}{VP\_I2C\_RAM\_LEN}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_acc2cb57da400f54f698608b623317626} 
+\#define VP\+\_\+\+I2\+C\+\_\+\+RAM\+\_\+\+LEN~SOC\+\_\+\+I2\+C\+\_\+\+FIFO\+\_\+\+LEN}
+
+\Hypertarget{i2c__protocol_8h_ac0a07d196ce55036bd0624b7d8cc2527}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_PARAM\_BITS\_MASK@{VP\_PARAM\_BITS\_MASK}}
+\index{VP\_PARAM\_BITS\_MASK@{VP\_PARAM\_BITS\_MASK}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_PARAM\_BITS\_MASK}{VP\_PARAM\_BITS\_MASK}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_ac0a07d196ce55036bd0624b7d8cc2527} 
+\#define VP\+\_\+\+PARAM\+\_\+\+BITS\+\_\+\+MASK~(\mbox{\hyperlink{i2c__protocol_8h_ad22de2b4282d42503a668fa2b7f46a10}{VP\+\_\+\+FLAG\+\_\+\+VOL}} \texorpdfstring{$\vert$}{|} \mbox{\hyperlink{i2c__protocol_8h_a238d2d663007ceeef8a3f14b4e34cf34}{VP\+\_\+\+FLAG\+\_\+\+BAT}} \texorpdfstring{$\vert$}{|} \mbox{\hyperlink{i2c__protocol_8h_a3f784330a7c1a67e3daa366fb0ecaa2a}{VP\+\_\+\+FLAG\+\_\+\+ADDR}} \texorpdfstring{$\vert$}{|} \mbox{\hyperlink{i2c__protocol_8h_a6138a328f43aedaeebc9d69c8ef1f9fc}{VP\+\_\+\+FLAG\+\_\+\+P1}} \texorpdfstring{$\vert$}{|} \mbox{\hyperlink{i2c__protocol_8h_a84a8634c7a5dc3c41b1f344a698a6684}{VP\+\_\+\+FLAG\+\_\+\+P2}})}
+
+\Hypertarget{i2c__protocol_8h_abd796d8097698f800326a2d810d07970}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_PAYLOAD\_ADDR\_LEN@{VP\_PAYLOAD\_ADDR\_LEN}}
+\index{VP\_PAYLOAD\_ADDR\_LEN@{VP\_PAYLOAD\_ADDR\_LEN}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_PAYLOAD\_ADDR\_LEN}{VP\_PAYLOAD\_ADDR\_LEN}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_abd796d8097698f800326a2d810d07970} 
+\#define VP\+\_\+\+PAYLOAD\+\_\+\+ADDR\+\_\+\+LEN~40U}
+
+\Hypertarget{i2c__protocol_8h_aab61da9d353745af9d49eadf4accbb75}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_PAYLOAD\_BAT\_LEN@{VP\_PAYLOAD\_BAT\_LEN}}
+\index{VP\_PAYLOAD\_BAT\_LEN@{VP\_PAYLOAD\_BAT\_LEN}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_PAYLOAD\_BAT\_LEN}{VP\_PAYLOAD\_BAT\_LEN}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_aab61da9d353745af9d49eadf4accbb75} 
+\#define VP\+\_\+\+PAYLOAD\+\_\+\+BAT\+\_\+\+LEN~1U}
+
+\Hypertarget{i2c__protocol_8h_aa00c73ad44d3b945c3bfefaeb94d1a8a}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_PAYLOAD\_P1\_LEN@{VP\_PAYLOAD\_P1\_LEN}}
+\index{VP\_PAYLOAD\_P1\_LEN@{VP\_PAYLOAD\_P1\_LEN}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_PAYLOAD\_P1\_LEN}{VP\_PAYLOAD\_P1\_LEN}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_aa00c73ad44d3b945c3bfefaeb94d1a8a} 
+\#define VP\+\_\+\+PAYLOAD\+\_\+\+P1\+\_\+\+LEN~32U}
+
+\Hypertarget{i2c__protocol_8h_a19b639419a640ceaae7899ea71e5d466}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_PAYLOAD\_P2\_LEN@{VP\_PAYLOAD\_P2\_LEN}}
+\index{VP\_PAYLOAD\_P2\_LEN@{VP\_PAYLOAD\_P2\_LEN}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_PAYLOAD\_P2\_LEN}{VP\_PAYLOAD\_P2\_LEN}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_a19b639419a640ceaae7899ea71e5d466} 
+\#define VP\+\_\+\+PAYLOAD\+\_\+\+P2\+\_\+\+LEN~32U}
+
+\Hypertarget{i2c__protocol_8h_aa9617ca4a2fd14fab3143d551c66bf6b}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_PAYLOAD\_VOL\_LEN@{VP\_PAYLOAD\_VOL\_LEN}}
+\index{VP\_PAYLOAD\_VOL\_LEN@{VP\_PAYLOAD\_VOL\_LEN}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_PAYLOAD\_VOL\_LEN}{VP\_PAYLOAD\_VOL\_LEN}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_aa9617ca4a2fd14fab3143d551c66bf6b} 
+\#define VP\+\_\+\+PAYLOAD\+\_\+\+VOL\+\_\+\+LEN~1U}
+
+\Hypertarget{i2c__protocol_8h_ad0d2f8cfa8cb6b28f880f6f956cb2d26}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_REQ\_ADDR@{VP\_REQ\_ADDR}}
+\index{VP\_REQ\_ADDR@{VP\_REQ\_ADDR}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_REQ\_ADDR}{VP\_REQ\_ADDR}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_ad0d2f8cfa8cb6b28f880f6f956cb2d26} 
+\#define VP\+\_\+\+REQ\+\_\+\+ADDR~(1U $<$$<$ 4)}
+
+\Hypertarget{i2c__protocol_8h_aad998465b9db6fecc1da00b036cddae2}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_REQ\_BAT@{VP\_REQ\_BAT}}
+\index{VP\_REQ\_BAT@{VP\_REQ\_BAT}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_REQ\_BAT}{VP\_REQ\_BAT}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_aad998465b9db6fecc1da00b036cddae2} 
+\#define VP\+\_\+\+REQ\+\_\+\+BAT~(1U $<$$<$ 3)}
+
+\Hypertarget{i2c__protocol_8h_a8091e52a51f1b49722fec73409114eaa}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_REQ\_DATA@{VP\_REQ\_DATA}}
+\index{VP\_REQ\_DATA@{VP\_REQ\_DATA}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_REQ\_DATA}{VP\_REQ\_DATA}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_a8091e52a51f1b49722fec73409114eaa} 
+\#define VP\+\_\+\+REQ\+\_\+\+DATA~(1U $<$$<$ 1)}
+
+\Hypertarget{i2c__protocol_8h_a540a61ddcd6601700171086edfb66983}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_REQ\_MAILBOX\_LEN@{VP\_REQ\_MAILBOX\_LEN}}
+\index{VP\_REQ\_MAILBOX\_LEN@{VP\_REQ\_MAILBOX\_LEN}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_REQ\_MAILBOX\_LEN}{VP\_REQ\_MAILBOX\_LEN}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_a540a61ddcd6601700171086edfb66983} 
+\#define VP\+\_\+\+REQ\+\_\+\+MAILBOX\+\_\+\+LEN~\mbox{\hyperlink{i2c__protocol_8h_ab947f6823da0ef32a915c14b8db1bba4}{VP\+\_\+\+STATUS\+\_\+\+LEN}}}
+
+\Hypertarget{i2c__protocol_8h_a89d864cf466230aa16a7e6d20eb617bb}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_REQ\_MAILBOX\_OFFSET@{VP\_REQ\_MAILBOX\_OFFSET}}
+\index{VP\_REQ\_MAILBOX\_OFFSET@{VP\_REQ\_MAILBOX\_OFFSET}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_REQ\_MAILBOX\_OFFSET}{VP\_REQ\_MAILBOX\_OFFSET}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_a89d864cf466230aa16a7e6d20eb617bb} 
+\#define VP\+\_\+\+REQ\+\_\+\+MAILBOX\+\_\+\+OFFSET~0U}
+
+\Hypertarget{i2c__protocol_8h_a162b620c0ccc566283a29aff70f39659}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_REQ\_OFFSET\_MASK@{VP\_REQ\_OFFSET\_MASK}}
+\index{VP\_REQ\_OFFSET\_MASK@{VP\_REQ\_OFFSET\_MASK}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_REQ\_OFFSET\_MASK}{VP\_REQ\_OFFSET\_MASK}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_a162b620c0ccc566283a29aff70f39659} 
+\#define VP\+\_\+\+REQ\+\_\+\+OFFSET\+\_\+\+MASK~(0x\+FFU $<$$<$ \mbox{\hyperlink{i2c__protocol_8h_abae2f9c4ee81ce6c8c137b1279cce871}{VP\+\_\+\+REQ\+\_\+\+OFFSET\+\_\+\+SHIFT}})}
+
+\Hypertarget{i2c__protocol_8h_abae2f9c4ee81ce6c8c137b1279cce871}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_REQ\_OFFSET\_SHIFT@{VP\_REQ\_OFFSET\_SHIFT}}
+\index{VP\_REQ\_OFFSET\_SHIFT@{VP\_REQ\_OFFSET\_SHIFT}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_REQ\_OFFSET\_SHIFT}{VP\_REQ\_OFFSET\_SHIFT}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_abae2f9c4ee81ce6c8c137b1279cce871} 
+\#define VP\+\_\+\+REQ\+\_\+\+OFFSET\+\_\+\+SHIFT~24U}
+
+\Hypertarget{i2c__protocol_8h_ae555c9871d4c8f0fb16cc92529a81af5}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_REQ\_P1@{VP\_REQ\_P1}}
+\index{VP\_REQ\_P1@{VP\_REQ\_P1}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_REQ\_P1}{VP\_REQ\_P1}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_ae555c9871d4c8f0fb16cc92529a81af5} 
+\#define VP\+\_\+\+REQ\+\_\+\+P1~(1U $<$$<$ 5)}
+
+\Hypertarget{i2c__protocol_8h_a4463ba7e4e7641f16790c917d515b12a}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_REQ\_P2@{VP\_REQ\_P2}}
+\index{VP\_REQ\_P2@{VP\_REQ\_P2}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_REQ\_P2}{VP\_REQ\_P2}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_a4463ba7e4e7641f16790c917d515b12a} 
+\#define VP\+\_\+\+REQ\+\_\+\+P2~(1U $<$$<$ 6)}
+
+\Hypertarget{i2c__protocol_8h_a86884a8cf110c2232fca4694d4978424}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_REQ\_VOL@{VP\_REQ\_VOL}}
+\index{VP\_REQ\_VOL@{VP\_REQ\_VOL}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_REQ\_VOL}{VP\_REQ\_VOL}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_a86884a8cf110c2232fca4694d4978424} 
+\#define VP\+\_\+\+REQ\+\_\+\+VOL~(1U $<$$<$ 2)}
+
+\Hypertarget{i2c__protocol_8h_ad933adefd03ee4312fa01938abc97cd1}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_RESP\_ADDR\_LEN@{VP\_RESP\_ADDR\_LEN}}
+\index{VP\_RESP\_ADDR\_LEN@{VP\_RESP\_ADDR\_LEN}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_RESP\_ADDR\_LEN}{VP\_RESP\_ADDR\_LEN}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_ad933adefd03ee4312fa01938abc97cd1} 
+\#define VP\+\_\+\+RESP\+\_\+\+ADDR\+\_\+\+LEN~(\mbox{\hyperlink{i2c__protocol_8h_a086be88f8412bdff93eae667157c9d85}{VP\+\_\+\+RESP\+\_\+\+HDR\+\_\+\+LEN}} + \mbox{\hyperlink{i2c__protocol_8h_abd796d8097698f800326a2d810d07970}{VP\+\_\+\+PAYLOAD\+\_\+\+ADDR\+\_\+\+LEN}})}
+
+\Hypertarget{i2c__protocol_8h_afdfecfbcf03082a8d2e33bce83702da8}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_RESP\_BAT\_LEN@{VP\_RESP\_BAT\_LEN}}
+\index{VP\_RESP\_BAT\_LEN@{VP\_RESP\_BAT\_LEN}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_RESP\_BAT\_LEN}{VP\_RESP\_BAT\_LEN}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_afdfecfbcf03082a8d2e33bce83702da8} 
+\#define VP\+\_\+\+RESP\+\_\+\+BAT\+\_\+\+LEN~(\mbox{\hyperlink{i2c__protocol_8h_a086be88f8412bdff93eae667157c9d85}{VP\+\_\+\+RESP\+\_\+\+HDR\+\_\+\+LEN}} + \mbox{\hyperlink{i2c__protocol_8h_aab61da9d353745af9d49eadf4accbb75}{VP\+\_\+\+PAYLOAD\+\_\+\+BAT\+\_\+\+LEN}})}
+
+\Hypertarget{i2c__protocol_8h_a086be88f8412bdff93eae667157c9d85}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_RESP\_HDR\_LEN@{VP\_RESP\_HDR\_LEN}}
+\index{VP\_RESP\_HDR\_LEN@{VP\_RESP\_HDR\_LEN}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_RESP\_HDR\_LEN}{VP\_RESP\_HDR\_LEN}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_a086be88f8412bdff93eae667157c9d85} 
+\#define VP\+\_\+\+RESP\+\_\+\+HDR\+\_\+\+LEN~4U   /\texorpdfstring{$\ast$}{*} Response header (flags) prefix on param replies \texorpdfstring{$\ast$}{*}/}
+
+\Hypertarget{i2c__protocol_8h_a4bad85a6c8ee6c3e8902ab3e3ae88bab}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_RESP\_MAILBOX\_LEN@{VP\_RESP\_MAILBOX\_LEN}}
+\index{VP\_RESP\_MAILBOX\_LEN@{VP\_RESP\_MAILBOX\_LEN}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_RESP\_MAILBOX\_LEN}{VP\_RESP\_MAILBOX\_LEN}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_a4bad85a6c8ee6c3e8902ab3e3ae88bab} 
+\#define VP\+\_\+\+RESP\+\_\+\+MAILBOX\+\_\+\+LEN~(\mbox{\hyperlink{i2c__protocol_8h_acc2cb57da400f54f698608b623317626}{VP\+\_\+\+I2\+C\+\_\+\+RAM\+\_\+\+LEN}} -\/ \mbox{\hyperlink{i2c__protocol_8h_a74ff9a1436cb6136be36d4ef7218a476}{VP\+\_\+\+RESP\+\_\+\+MAILBOX\+\_\+\+OFFSET}})}
+
+\Hypertarget{i2c__protocol_8h_a74ff9a1436cb6136be36d4ef7218a476}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_RESP\_MAILBOX\_OFFSET@{VP\_RESP\_MAILBOX\_OFFSET}}
+\index{VP\_RESP\_MAILBOX\_OFFSET@{VP\_RESP\_MAILBOX\_OFFSET}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_RESP\_MAILBOX\_OFFSET}{VP\_RESP\_MAILBOX\_OFFSET}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_a74ff9a1436cb6136be36d4ef7218a476} 
+\#define VP\+\_\+\+RESP\+\_\+\+MAILBOX\+\_\+\+OFFSET~\mbox{\hyperlink{i2c__protocol_8h_a540a61ddcd6601700171086edfb66983}{VP\+\_\+\+REQ\+\_\+\+MAILBOX\+\_\+\+LEN}}}
+
+\Hypertarget{i2c__protocol_8h_a2d2018c70d59329f56036a28763b3875}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_RESP\_P1\_LEN@{VP\_RESP\_P1\_LEN}}
+\index{VP\_RESP\_P1\_LEN@{VP\_RESP\_P1\_LEN}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_RESP\_P1\_LEN}{VP\_RESP\_P1\_LEN}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_a2d2018c70d59329f56036a28763b3875} 
+\#define VP\+\_\+\+RESP\+\_\+\+P1\+\_\+\+LEN~(\mbox{\hyperlink{i2c__protocol_8h_a086be88f8412bdff93eae667157c9d85}{VP\+\_\+\+RESP\+\_\+\+HDR\+\_\+\+LEN}} + \mbox{\hyperlink{i2c__protocol_8h_aa00c73ad44d3b945c3bfefaeb94d1a8a}{VP\+\_\+\+PAYLOAD\+\_\+\+P1\+\_\+\+LEN}})}
+
+\Hypertarget{i2c__protocol_8h_a70f6939375c18fe4101fefadba5a31f4}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_RESP\_P2\_LEN@{VP\_RESP\_P2\_LEN}}
+\index{VP\_RESP\_P2\_LEN@{VP\_RESP\_P2\_LEN}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_RESP\_P2\_LEN}{VP\_RESP\_P2\_LEN}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_a70f6939375c18fe4101fefadba5a31f4} 
+\#define VP\+\_\+\+RESP\+\_\+\+P2\+\_\+\+LEN~(\mbox{\hyperlink{i2c__protocol_8h_a086be88f8412bdff93eae667157c9d85}{VP\+\_\+\+RESP\+\_\+\+HDR\+\_\+\+LEN}} + \mbox{\hyperlink{i2c__protocol_8h_a19b639419a640ceaae7899ea71e5d466}{VP\+\_\+\+PAYLOAD\+\_\+\+P2\+\_\+\+LEN}})}
+
+\Hypertarget{i2c__protocol_8h_a6de264dd7dc330fb25ed7e8dfbc53648}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_RESP\_PAYLOAD\_MAX@{VP\_RESP\_PAYLOAD\_MAX}}
+\index{VP\_RESP\_PAYLOAD\_MAX@{VP\_RESP\_PAYLOAD\_MAX}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_RESP\_PAYLOAD\_MAX}{VP\_RESP\_PAYLOAD\_MAX}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_a6de264dd7dc330fb25ed7e8dfbc53648} 
+\#define VP\+\_\+\+RESP\+\_\+\+PAYLOAD\+\_\+\+MAX~(\mbox{\hyperlink{i2c__protocol_8h_a4bad85a6c8ee6c3e8902ab3e3ae88bab}{VP\+\_\+\+RESP\+\_\+\+MAILBOX\+\_\+\+LEN}} -\/ \mbox{\hyperlink{i2c__protocol_8h_a086be88f8412bdff93eae667157c9d85}{VP\+\_\+\+RESP\+\_\+\+HDR\+\_\+\+LEN}})}
+
+\Hypertarget{i2c__protocol_8h_a90364cceb8e77f6af450bc25f76abd09}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_RESP\_VOL\_LEN@{VP\_RESP\_VOL\_LEN}}
+\index{VP\_RESP\_VOL\_LEN@{VP\_RESP\_VOL\_LEN}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_RESP\_VOL\_LEN}{VP\_RESP\_VOL\_LEN}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_a90364cceb8e77f6af450bc25f76abd09} 
+\#define VP\+\_\+\+RESP\+\_\+\+VOL\+\_\+\+LEN~(\mbox{\hyperlink{i2c__protocol_8h_a086be88f8412bdff93eae667157c9d85}{VP\+\_\+\+RESP\+\_\+\+HDR\+\_\+\+LEN}} + \mbox{\hyperlink{i2c__protocol_8h_aa9617ca4a2fd14fab3143d551c66bf6b}{VP\+\_\+\+PAYLOAD\+\_\+\+VOL\+\_\+\+LEN}})}
+
+\Hypertarget{i2c__protocol_8h_ad50136799be90cb40303f899973cbc83}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_SETTLE\_MS@{VP\_SETTLE\_MS}}
+\index{VP\_SETTLE\_MS@{VP\_SETTLE\_MS}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_SETTLE\_MS}{VP\_SETTLE\_MS}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_ad50136799be90cb40303f899973cbc83} 
+\#define VP\+\_\+\+SETTLE\+\_\+\+MS~20U}
+
+\Hypertarget{i2c__protocol_8h_ab947f6823da0ef32a915c14b8db1bba4}\index{i2c\_protocol.h@{i2c\_protocol.h}!VP\_STATUS\_LEN@{VP\_STATUS\_LEN}}
+\index{VP\_STATUS\_LEN@{VP\_STATUS\_LEN}!i2c\_protocol.h@{i2c\_protocol.h}}
+\doxysubsubsection{\texorpdfstring{VP\_STATUS\_LEN}{VP\_STATUS\_LEN}}
+{\footnotesize\ttfamily \label{i2c__protocol_8h_ab947f6823da0ef32a915c14b8db1bba4} 
+\#define VP\+\_\+\+STATUS\+\_\+\+LEN~4U   /\texorpdfstring{$\ast$}{*} Status or request register is always 4 bytes \texorpdfstring{$\ast$}{*}/}
+

@@ -1,0 +1,133 @@
+\doxysection{main/src/shared\+\_\+state.c File Reference}
+\hypertarget{shared__state_8c}{}\label{shared__state_8c}\index{main/src/shared\_state.c@{main/src/shared\_state.c}}
+{\ttfamily \#include $<$ctype.\+h$>$}\newline
+{\ttfamily \#include $<$stdio.\+h$>$}\newline
+{\ttfamily \#include $<$stdlib.\+h$>$}\newline
+{\ttfamily \#include $<$string.\+h$>$}\newline
+{\ttfamily \#include "{}freertos/\+Free\+RTOS.\+h"{}}\newline
+{\ttfamily \#include "{}freertos/semphr.\+h"{}}\newline
+{\ttfamily \#include "{}configs.\+h"{}}\newline
+{\ttfamily \#include "{}i2c\+\_\+protocol.\+h"{}}\newline
+{\ttfamily \#include "{}shared\+\_\+state.\+h"{}}\newline
+\doxysubsubsection*{Classes}
+\begin{DoxyCompactItemize}
+\item 
+struct \mbox{\hyperlink{structvp__state__t}{vp\+\_\+state\+\_\+t}}
+\end{DoxyCompactItemize}
+\doxysubsubsection*{Functions}
+\begin{DoxyCompactItemize}
+\item 
+void \mbox{\hyperlink{shared__state_8c_a84078139b75e071e354a88fb48772583}{vp\+\_\+state\+\_\+init}} (void)
+\item 
+void \mbox{\hyperlink{shared__state_8c_ae9430605ed60b12bdf8aa5892ad2ba24}{vp\+\_\+state\+\_\+set\+\_\+volume}} (uint8\+\_\+t volume)
+\item 
+void \mbox{\hyperlink{shared__state_8c_a8420fb5a9369bc87c6d0ac1acffe56e7}{vp\+\_\+state\+\_\+set\+\_\+battery}} (uint8\+\_\+t battery)
+\item 
+void \mbox{\hyperlink{shared__state_8c_a2ce7b52206888236ea1260f3d08fc240}{vp\+\_\+state\+\_\+set\+\_\+ble\+\_\+addr}} (const char \texorpdfstring{$\ast$}{*}addr)
+\item 
+void \mbox{\hyperlink{shared__state_8c_aa36e610667f1a324e4761600dc70d7b6}{vp\+\_\+state\+\_\+set\+\_\+param1}} (const char \texorpdfstring{$\ast$}{*}value)
+\item 
+void \mbox{\hyperlink{shared__state_8c_a1d5b674b4a1447270ca7b5f171488b84}{vp\+\_\+state\+\_\+set\+\_\+param2}} (const char \texorpdfstring{$\ast$}{*}value)
+\item 
+void \mbox{\hyperlink{shared__state_8c_adb2aca16a3a4f3d28a96988fd936ac1a}{vp\+\_\+state\+\_\+get\+\_\+snapshot}} (\mbox{\hyperlink{structvp__state__snapshot__t}{vp\+\_\+state\+\_\+snapshot\+\_\+t}} \texorpdfstring{$\ast$}{*}out)
+\item 
+size\+\_\+t \mbox{\hyperlink{shared__state_8c_aedff298e1e9e813d4ecf6787cd7ac9ce}{vp\+\_\+state\+\_\+build\+\_\+i2c\+\_\+frame}} (uint8\+\_\+t \texorpdfstring{$\ast$}{*}out, size\+\_\+t out\+\_\+len)
+\item 
+void \mbox{\hyperlink{shared__state_8c_a5b2e8641013387f96363a9bf174d64d0}{vp\+\_\+state\+\_\+update\+\_\+from\+\_\+ble\+\_\+payload}} (const uint8\+\_\+t \texorpdfstring{$\ast$}{*}payload, uint16\+\_\+t payload\+\_\+len)
+\item 
+uint32\+\_\+t \mbox{\hyperlink{shared__state_8c_a54444613d44ec1559a41e1d0978e2729}{vp\+\_\+state\+\_\+get\+\_\+dirty\+\_\+flags}} (void)
+\item 
+void \mbox{\hyperlink{shared__state_8c_a59d11d49a699733ce322aacb556f842f}{vp\+\_\+state\+\_\+clear\+\_\+dirty\+\_\+bits}} (uint32\+\_\+t mask)
+\item 
+void \mbox{\hyperlink{shared__state_8c_a71bab3a98b54d220e117d48cb94198dc}{vp\+\_\+state\+\_\+testing\+\_\+tick}} (void)
+\end{DoxyCompactItemize}
+
+
+\doxysubsection{Detailed Description}
+\begin{DoxyAuthor}{Author}
+
+\end{DoxyAuthor}
+\begin{DoxyVersion}{Version}
+0.\+1 
+\end{DoxyVersion}
+\begin{DoxyDate}{Date}
+2026-\/03-\/18
+\end{DoxyDate}
+\begin{DoxyCopyright}{Copyright}
+Copyright (c) 2026 
+\end{DoxyCopyright}
+
+
+\doxysubsection{Function Documentation}
+\Hypertarget{shared__state_8c_aedff298e1e9e813d4ecf6787cd7ac9ce}\index{shared\_state.c@{shared\_state.c}!vp\_state\_build\_i2c\_frame@{vp\_state\_build\_i2c\_frame}}
+\index{vp\_state\_build\_i2c\_frame@{vp\_state\_build\_i2c\_frame}!shared\_state.c@{shared\_state.c}}
+\doxysubsubsection{\texorpdfstring{vp\_state\_build\_i2c\_frame()}{vp\_state\_build\_i2c\_frame()}}
+{\footnotesize\ttfamily \label{shared__state_8c_aedff298e1e9e813d4ecf6787cd7ac9ce} 
+size\+\_\+t vp\+\_\+state\+\_\+build\+\_\+i2c\+\_\+frame (\begin{DoxyParamCaption}\item[{uint8\+\_\+t \texorpdfstring{$\ast$}{*}}]{out}{, }\item[{size\+\_\+t}]{out\+\_\+len}{}\end{DoxyParamCaption})}
+
+\Hypertarget{shared__state_8c_a59d11d49a699733ce322aacb556f842f}\index{shared\_state.c@{shared\_state.c}!vp\_state\_clear\_dirty\_bits@{vp\_state\_clear\_dirty\_bits}}
+\index{vp\_state\_clear\_dirty\_bits@{vp\_state\_clear\_dirty\_bits}!shared\_state.c@{shared\_state.c}}
+\doxysubsubsection{\texorpdfstring{vp\_state\_clear\_dirty\_bits()}{vp\_state\_clear\_dirty\_bits()}}
+{\footnotesize\ttfamily \label{shared__state_8c_a59d11d49a699733ce322aacb556f842f} 
+void vp\+\_\+state\+\_\+clear\+\_\+dirty\+\_\+bits (\begin{DoxyParamCaption}\item[{uint32\+\_\+t}]{mask}{}\end{DoxyParamCaption})}
+
+\Hypertarget{shared__state_8c_a54444613d44ec1559a41e1d0978e2729}\index{shared\_state.c@{shared\_state.c}!vp\_state\_get\_dirty\_flags@{vp\_state\_get\_dirty\_flags}}
+\index{vp\_state\_get\_dirty\_flags@{vp\_state\_get\_dirty\_flags}!shared\_state.c@{shared\_state.c}}
+\doxysubsubsection{\texorpdfstring{vp\_state\_get\_dirty\_flags()}{vp\_state\_get\_dirty\_flags()}}
+{\footnotesize\ttfamily \label{shared__state_8c_a54444613d44ec1559a41e1d0978e2729} 
+uint32\+\_\+t vp\+\_\+state\+\_\+get\+\_\+dirty\+\_\+flags (\begin{DoxyParamCaption}\item[{void}]{}{}\end{DoxyParamCaption})}
+
+\Hypertarget{shared__state_8c_adb2aca16a3a4f3d28a96988fd936ac1a}\index{shared\_state.c@{shared\_state.c}!vp\_state\_get\_snapshot@{vp\_state\_get\_snapshot}}
+\index{vp\_state\_get\_snapshot@{vp\_state\_get\_snapshot}!shared\_state.c@{shared\_state.c}}
+\doxysubsubsection{\texorpdfstring{vp\_state\_get\_snapshot()}{vp\_state\_get\_snapshot()}}
+{\footnotesize\ttfamily \label{shared__state_8c_adb2aca16a3a4f3d28a96988fd936ac1a} 
+void vp\+\_\+state\+\_\+get\+\_\+snapshot (\begin{DoxyParamCaption}\item[{\mbox{\hyperlink{structvp__state__snapshot__t}{vp\+\_\+state\+\_\+snapshot\+\_\+t}} \texorpdfstring{$\ast$}{*}}]{out}{}\end{DoxyParamCaption})}
+
+\Hypertarget{shared__state_8c_a84078139b75e071e354a88fb48772583}\index{shared\_state.c@{shared\_state.c}!vp\_state\_init@{vp\_state\_init}}
+\index{vp\_state\_init@{vp\_state\_init}!shared\_state.c@{shared\_state.c}}
+\doxysubsubsection{\texorpdfstring{vp\_state\_init()}{vp\_state\_init()}}
+{\footnotesize\ttfamily \label{shared__state_8c_a84078139b75e071e354a88fb48772583} 
+void vp\+\_\+state\+\_\+init (\begin{DoxyParamCaption}\item[{void}]{}{}\end{DoxyParamCaption})}
+
+\Hypertarget{shared__state_8c_a8420fb5a9369bc87c6d0ac1acffe56e7}\index{shared\_state.c@{shared\_state.c}!vp\_state\_set\_battery@{vp\_state\_set\_battery}}
+\index{vp\_state\_set\_battery@{vp\_state\_set\_battery}!shared\_state.c@{shared\_state.c}}
+\doxysubsubsection{\texorpdfstring{vp\_state\_set\_battery()}{vp\_state\_set\_battery()}}
+{\footnotesize\ttfamily \label{shared__state_8c_a8420fb5a9369bc87c6d0ac1acffe56e7} 
+void vp\+\_\+state\+\_\+set\+\_\+battery (\begin{DoxyParamCaption}\item[{uint8\+\_\+t}]{battery}{}\end{DoxyParamCaption})}
+
+\Hypertarget{shared__state_8c_a2ce7b52206888236ea1260f3d08fc240}\index{shared\_state.c@{shared\_state.c}!vp\_state\_set\_ble\_addr@{vp\_state\_set\_ble\_addr}}
+\index{vp\_state\_set\_ble\_addr@{vp\_state\_set\_ble\_addr}!shared\_state.c@{shared\_state.c}}
+\doxysubsubsection{\texorpdfstring{vp\_state\_set\_ble\_addr()}{vp\_state\_set\_ble\_addr()}}
+{\footnotesize\ttfamily \label{shared__state_8c_a2ce7b52206888236ea1260f3d08fc240} 
+void vp\+\_\+state\+\_\+set\+\_\+ble\+\_\+addr (\begin{DoxyParamCaption}\item[{const char \texorpdfstring{$\ast$}{*}}]{addr}{}\end{DoxyParamCaption})}
+
+\Hypertarget{shared__state_8c_aa36e610667f1a324e4761600dc70d7b6}\index{shared\_state.c@{shared\_state.c}!vp\_state\_set\_param1@{vp\_state\_set\_param1}}
+\index{vp\_state\_set\_param1@{vp\_state\_set\_param1}!shared\_state.c@{shared\_state.c}}
+\doxysubsubsection{\texorpdfstring{vp\_state\_set\_param1()}{vp\_state\_set\_param1()}}
+{\footnotesize\ttfamily \label{shared__state_8c_aa36e610667f1a324e4761600dc70d7b6} 
+void vp\+\_\+state\+\_\+set\+\_\+param1 (\begin{DoxyParamCaption}\item[{const char \texorpdfstring{$\ast$}{*}}]{value}{}\end{DoxyParamCaption})}
+
+\Hypertarget{shared__state_8c_a1d5b674b4a1447270ca7b5f171488b84}\index{shared\_state.c@{shared\_state.c}!vp\_state\_set\_param2@{vp\_state\_set\_param2}}
+\index{vp\_state\_set\_param2@{vp\_state\_set\_param2}!shared\_state.c@{shared\_state.c}}
+\doxysubsubsection{\texorpdfstring{vp\_state\_set\_param2()}{vp\_state\_set\_param2()}}
+{\footnotesize\ttfamily \label{shared__state_8c_a1d5b674b4a1447270ca7b5f171488b84} 
+void vp\+\_\+state\+\_\+set\+\_\+param2 (\begin{DoxyParamCaption}\item[{const char \texorpdfstring{$\ast$}{*}}]{value}{}\end{DoxyParamCaption})}
+
+\Hypertarget{shared__state_8c_ae9430605ed60b12bdf8aa5892ad2ba24}\index{shared\_state.c@{shared\_state.c}!vp\_state\_set\_volume@{vp\_state\_set\_volume}}
+\index{vp\_state\_set\_volume@{vp\_state\_set\_volume}!shared\_state.c@{shared\_state.c}}
+\doxysubsubsection{\texorpdfstring{vp\_state\_set\_volume()}{vp\_state\_set\_volume()}}
+{\footnotesize\ttfamily \label{shared__state_8c_ae9430605ed60b12bdf8aa5892ad2ba24} 
+void vp\+\_\+state\+\_\+set\+\_\+volume (\begin{DoxyParamCaption}\item[{uint8\+\_\+t}]{volume}{}\end{DoxyParamCaption})}
+
+\Hypertarget{shared__state_8c_a71bab3a98b54d220e117d48cb94198dc}\index{shared\_state.c@{shared\_state.c}!vp\_state\_testing\_tick@{vp\_state\_testing\_tick}}
+\index{vp\_state\_testing\_tick@{vp\_state\_testing\_tick}!shared\_state.c@{shared\_state.c}}
+\doxysubsubsection{\texorpdfstring{vp\_state\_testing\_tick()}{vp\_state\_testing\_tick()}}
+{\footnotesize\ttfamily \label{shared__state_8c_a71bab3a98b54d220e117d48cb94198dc} 
+void vp\+\_\+state\+\_\+testing\+\_\+tick (\begin{DoxyParamCaption}\item[{void}]{}{}\end{DoxyParamCaption})}
+
+\Hypertarget{shared__state_8c_a5b2e8641013387f96363a9bf174d64d0}\index{shared\_state.c@{shared\_state.c}!vp\_state\_update\_from\_ble\_payload@{vp\_state\_update\_from\_ble\_payload}}
+\index{vp\_state\_update\_from\_ble\_payload@{vp\_state\_update\_from\_ble\_payload}!shared\_state.c@{shared\_state.c}}
+\doxysubsubsection{\texorpdfstring{vp\_state\_update\_from\_ble\_payload()}{vp\_state\_update\_from\_ble\_payload()}}
+{\footnotesize\ttfamily \label{shared__state_8c_a5b2e8641013387f96363a9bf174d64d0} 
+void vp\+\_\+state\+\_\+update\+\_\+from\+\_\+ble\+\_\+payload (\begin{DoxyParamCaption}\item[{const uint8\+\_\+t \texorpdfstring{$\ast$}{*}}]{payload}{, }\item[{uint16\+\_\+t}]{payload\+\_\+len}{}\end{DoxyParamCaption})}
+

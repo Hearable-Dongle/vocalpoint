@@ -1,0 +1,100 @@
+\chapter{BLE Peripheral Example}
+\hypertarget{index}{}\label{index}\index{BLE Peripheral Example@{BLE Peripheral Example}}
+\label{index_md__r_e_a_d_m_e}%
+\Hypertarget{index_md__r_e_a_d_m_e}%
+
+
+(See the \doxylink{_r_e_a_d_m_e_8md}{README.\+md} file in the upper level \textquotesingle{}examples\textquotesingle{} directory for more information about examples.)
+
+This example creates GATT server and then starts advertising, waiting to be connected to a GATT client.
+
+It uses ESP32\textquotesingle{}s Bluetooth controller and Nim\+BLE stack based BLE host.
+
+This example aims at understanding GATT database configuration, handling GATT reads and writes, handling subscribe events, understanding advertisement and SMP related Nim\+BLE APIs.
+
+It also demonstrates security features of Nim\+BLE stack. SMP parameters like I/O capabilities of device, Bonding flag, MITM protection flag and Secure Connection only mode, Enabling Link Encryption etc., can be configured through menuconfig options.
+
+For RPA feature (currently Host based privacy feature is supported), use API {\ttfamily ble\+\_\+hs\+\_\+pvcy\+\_\+rpa\+\_\+config} to enable/disable host based privacy, {\ttfamily own\+\_\+addr\+\_\+type} needs to be set to {\ttfamily BLE\+\_\+\+ADDR\+\_\+\+RANDOM} to use this feature. Please include {\ttfamily ble\+\_\+hs\+\_\+pvcy.\+h} while using this API. As {\ttfamily ble\+\_\+hs\+\_\+pvcy\+\_\+rpa\+\_\+config} configures host privacy and sets address in controller, it is necessary to call this API after host-\/controller are synced (e.\+g. in {\ttfamily bleprph\+\_\+on\+\_\+sync} callback).
+
+To test this demo, any BLE scanner app can be used.
+
+Note \+:
+
+
+\begin{DoxyItemize}
+\item To install the dependency packages needed, please refer to the top level \href{../../../README.md\#running-test-python-script-pytest}{\texttt{ README file}}.
+\item Currently this Python utility is only supported on Linux (BLE communication is via BLuez + DBus).
+\end{DoxyItemize}\hypertarget{index_autotoc_md1}{}\doxysection{\texorpdfstring{How to Use Example}{How to Use Example}}\label{index_autotoc_md1}
+Before project configuration and build, be sure to set the correct chip target using\+:
+
+
+\begin{DoxyCode}{0}
+\DoxyCodeLine{idf.py\ set-\/target\ <chip\_name>}
+
+\end{DoxyCode}
+\hypertarget{index_autotoc_md2}{}\doxysubsection{\texorpdfstring{Configure the project}{Configure the project}}\label{index_autotoc_md2}
+Open the project configuration menu\+:
+
+
+\begin{DoxyCode}{0}
+\DoxyCodeLine{idf.py\ menuconfig}
+
+\end{DoxyCode}
+
+
+In the {\ttfamily Example Configuration} menu\+:
+
+
+\begin{DoxyItemize}
+\item Select I/O capabilities of device from {\ttfamily Example Configuration -\/-\/\texorpdfstring{$>$}{>} I/O Capability}, default is {\ttfamily Just\+\_\+works}.
+\item Enable/\+Disable other security related parameters {\ttfamily Bonding, MITM option, secure connection(\+SM SC)}.
+\end{DoxyItemize}\hypertarget{index_autotoc_md3}{}\doxysubsection{\texorpdfstring{Build and Flash}{Build and Flash}}\label{index_autotoc_md3}
+Run {\ttfamily idf.\+py -\/p PORT flash monitor} to build, flash and monitor the project.
+
+(To exit the serial monitor, type {\ttfamily Ctrl-\/\mbox{]}}.)
+
+See the \href{https://idf.espressif.com/}{\texttt{ Getting Started Guide}} for full steps to configure and use ESP-\/\+IDF to build projects.\hypertarget{index_autotoc_md4}{}\doxysection{\texorpdfstring{Example Output}{Example Output}}\label{index_autotoc_md4}
+There is this console output when bleprph is connected and characteristic is read\+:
+
+
+\begin{DoxyCode}{0}
+\DoxyCodeLine{I\ (118)\ BTDM\_INIT:\ BT\ controller\ compile\ version\ [fe7ced0]}
+\DoxyCodeLine{I\ (118)\ system\_api:\ Base\ MAC\ address\ is\ not\ set,\ read\ default\ base\ MAC\ address\ from\ BLK0\ of\ EFUSE}
+\DoxyCodeLine{W\ (128)\ phy\_init:\ failed\ to\ load\ RF\ calibration\ data\ (0xffffffff),\ falling\ back\ to\ full\ calibration}
+\DoxyCodeLine{I\ (268)\ phy:\ phy\_version:\ 4100,\ 6fa5e27,\ Jan\ 25\ 2019,\ 17:02:06,\ 0,\ 2}
+\DoxyCodeLine{I\ (508)\ NimBLE\_BLE\_PRPH:\ BLE\ Host\ Task\ Started}
+\DoxyCodeLine{I\ (508)\ uart:\ queue\ free\ spaces:\ 8}
+\DoxyCodeLine{GAP\ procedure\ initiated:\ stop\ advertising.}
+\DoxyCodeLine{Device\ Address:\ xx:xx:xx:xx:xx:xx}
+\DoxyCodeLine{GAP\ procedure\ initiated:\ advertise;\ disc\_mode=2\ adv\_channel\_map=0\ own\_addr\_type=0\ adv\_filter\_policy=0\ adv\_itvl\_min=0\ adv\_itvl\_max=0}
+\DoxyCodeLine{connection\ established;\ status=0\ handle=0\ our\_ota\_addr\_type=0\ our\_ota\_addr=xx:xx:xx:xx:xx:xx\ our\_id\_addr\_type=0\ our\_id\_addr=xx:xx:xx:xx:xx:xx\ peer\_ota\_addr\_type=1\ peer\_ota\_addr=xx:xx:xx:xx:xx:xx\ peer\_id\_addr\_type=1\ peer\_id\_addr=xx:xx:xx:xx:xx:xx\ conn\_itvl=39\ conn\_latency=0\ supervision\_timeout=500\ encrypted=0\ authenticated=0\ bonded=0}
+\DoxyCodeLine{}
+\DoxyCodeLine{connection\ updated;\ status=0\ handle=0\ our\_ota\_addr\_type=0\ our\_ota\_addr=xx:xx:xx:xx:xx:xx\ our\_id\_addr\_type=0\ our\_id\_addr=xx:xx:xx:xx:xx:xx\ peer\_ota\_addr\_type=1\ peer\_ota\_addr=xx:xx:xx:xx:xx:xx\ peer\_id\_addr\_type=1\ peer\_id\_addr=xx:xx:xx:xx:xx:xx\ conn\_itvl=6\ conn\_latency=0\ supervision\_timeout=500\ encrypted=0\ authenticated=0\ bonded=0}
+\DoxyCodeLine{}
+\DoxyCodeLine{I\ (50888)\ NimBLE\_BLE\_PRPH:\ PASSKEY\_ACTION\_EVENT\ started}
+\DoxyCodeLine{}
+\DoxyCodeLine{I\ (50888)\ NimBLE\_BLE\_PRPH:\ Passkey\ on\ device's\ display:\ xxxxxx}
+\DoxyCodeLine{I\ (50888)\ NimBLE\_BLE\_PRPH:\ Accept\ or\ reject\ the\ passkey\ through\ console\ in\ this\ format\ -\/>\ key\ Y\ or\ key\ N}
+\DoxyCodeLine{key\ Y}
+\DoxyCodeLine{I\ (50898)\ NimBLE\_BLE\_PRPH:\ ble\_sm\_inject\_io\ result:\ 0}
+\DoxyCodeLine{}
+\DoxyCodeLine{encryption\ change\ event;\ status=0\ handle=0\ our\_ota\_addr\_type=0\ our\_ota\_addr=xx:xx:xx:xx:xx:xx\ our\_id\_addr\_type=0\ our\_id\_addr=xx:xx:xx:xx:xx:xx\ peer\_ota\_addr\_type=1\ peer\_ota\_addr=xx:xx:xx:xx:xx:xx\ peer\_id\_addr\_type=1}
+\DoxyCodeLine{peer\_id\_addr=xx:xx:xx:xx:xx:xx\ conn\_itvl=6\ conn\_latency=0\ supervision\_timeout=500\ encrypted=1\ authenticated=1\ bonded=1}
+\DoxyCodeLine{}
+\DoxyCodeLine{connection\ updated;\ status=0\ handle=0\ our\_ota\_addr\_type=0\ our\_ota\_addr=xx:xx:xx:xx:xx:xx\ our\_id\_addr\_type=0\ our\_id\_addr=xx:xx:xx:xx:xx:xx}
+\DoxyCodeLine{peer\_ota\_addr\_type=1\ peer\_ota\_addr=xx:xx:xx:xx:xx:xx\ peer\_id\_addr\_type=1\ peer\_id\_addr=xx:xx:xx:xx:xx:xx\ conn\_itvl=39\ conn\_latency=0\ supervision\_timeout=500\ encrypted=1\ authenticated=1\ bonded=1}
+\DoxyCodeLine{}
+\DoxyCodeLine{subscribe\ event;\ conn\_handle=1\ attr\_handle=19\ reason=1\ prevn=0\ curn=1\ previ=0\ curi=0}
+\DoxyCodeLine{Subscribe\ to\ attribute\ (19)\ successful}
+\DoxyCodeLine{subscribe\ event;\ conn\_handle=1\ attr\_handle=25\ reason=1\ prevn=0\ curn=1\ previ=0\ curi=0}
+\DoxyCodeLine{Subscribe\ to\ attribute\ (25)\ successful}
+\DoxyCodeLine{GATT\ procedure\ initiated:\ notify;\ att\_handle=25}
+\DoxyCodeLine{Notification\ sent\ succesfully}
+
+\end{DoxyCode}
+\hypertarget{index_autotoc_md5}{}\doxysection{\texorpdfstring{Note}{Note}}\label{index_autotoc_md5}
+
+\begin{DoxyItemize}
+\item NVS support is not yet integrated to bonding. So, for now, bonding is not persistent across reboot.
+\end{DoxyItemize}\hypertarget{index_autotoc_md6}{}\doxysection{\texorpdfstring{Troubleshooting}{Troubleshooting}}\label{index_autotoc_md6}
+For any technical queries, please open an \href{https://github.com/espressif/esp-idf/issues}{\texttt{ issue}} on Git\+Hub. We will get back to you soon. 

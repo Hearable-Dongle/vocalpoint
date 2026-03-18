@@ -1,0 +1,86 @@
+\doxysection{main/src/ble\+\_\+manager.c File Reference}
+\hypertarget{ble__manager_8c}{}\label{ble__manager_8c}\index{main/src/ble\_manager.c@{main/src/ble\_manager.c}}
+{\ttfamily \#include $<$assert.\+h$>$}\newline
+{\ttfamily \#include $<$inttypes.\+h$>$}\newline
+{\ttfamily \#include $<$stdio.\+h$>$}\newline
+{\ttfamily \#include $<$string.\+h$>$}\newline
+{\ttfamily \#include "{}ble\+\_\+manager.\+h"{}}\newline
+{\ttfamily \#include "{}ble\+\_\+gatt\+\_\+server.\+h"{}}\newline
+{\ttfamily \#include "{}esp\+\_\+log.\+h"{}}\newline
+{\ttfamily \#include "{}esp\+\_\+peripheral.\+h"{}}\newline
+{\ttfamily \#include "{}host/ble\+\_\+gap.\+h"{}}\newline
+{\ttfamily \#include "{}host/ble\+\_\+hs.\+h"{}}\newline
+{\ttfamily \#include "{}host/util/util.\+h"{}}\newline
+{\ttfamily \#include "{}nimble/nimble\+\_\+port.\+h"{}}\newline
+{\ttfamily \#include "{}nimble/nimble\+\_\+port\+\_\+freertos.\+h"{}}\newline
+{\ttfamily \#include "{}shared\+\_\+state.\+h"{}}\newline
+{\ttfamily \#include "{}services/gap/ble\+\_\+svc\+\_\+gap.\+h"{}}\newline
+\doxysubsubsection*{Macros}
+\begin{DoxyCompactItemize}
+\item 
+\#define \mbox{\hyperlink{ble__manager_8c_a8993052a0b649f39fa9f8d74e11ae97e}{BLE\+\_\+\+ADV\+\_\+\+SERVICE\+\_\+\+UUID}}~0x1811
+\end{DoxyCompactItemize}
+\doxysubsubsection*{Functions}
+\begin{Indent}\textbf{ ble\+\_\+store\+\_\+config\+\_\+init}\par
+{\em Initializes the Nim\+BLE persistent storage configuration for bonding and security data. }\begin{DoxyCompactItemize}
+\item 
+void \mbox{\hyperlink{ble__manager_8c_a931b25a8797246e24c60c4a3abae8905}{ble\+\_\+store\+\_\+config\+\_\+init}} (void)
+\end{DoxyCompactItemize}
+\end{Indent}
+\begin{Indent}\textbf{ ble\+\_\+gap\+\_\+event\+\_\+handler}\par
+{\em Handles GAP events such as connection, disconnection, advertising completion, and security events for logging and state management.
+
+
+\begin{DoxyParams}{Parameters}
+{\em event} & \\
+\hline
+{\em arg} & \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+int 
+\end{DoxyReturn}
+}\begin{DoxyCompactItemize}
+\item 
+esp\+\_\+err\+\_\+t \mbox{\hyperlink{ble__manager_8c_a0e55afff5c0665e50069b09d2af4f6d9}{ble\+\_\+manager\+\_\+init}} (void)
+\end{DoxyCompactItemize}
+\end{Indent}
+
+
+\doxysubsection{Detailed Description}
+\begin{DoxyAuthor}{Author}
+
+\end{DoxyAuthor}
+\begin{DoxyVersion}{Version}
+0.\+1 
+\end{DoxyVersion}
+\begin{DoxyDate}{Date}
+2026-\/03-\/03
+\end{DoxyDate}
+\begin{DoxyCopyright}{Copyright}
+Copyright (c) 2026 
+\end{DoxyCopyright}
+
+
+\doxysubsection{Macro Definition Documentation}
+\Hypertarget{ble__manager_8c_a8993052a0b649f39fa9f8d74e11ae97e}\index{ble\_manager.c@{ble\_manager.c}!BLE\_ADV\_SERVICE\_UUID@{BLE\_ADV\_SERVICE\_UUID}}
+\index{BLE\_ADV\_SERVICE\_UUID@{BLE\_ADV\_SERVICE\_UUID}!ble\_manager.c@{ble\_manager.c}}
+\doxysubsubsection{\texorpdfstring{BLE\_ADV\_SERVICE\_UUID}{BLE\_ADV\_SERVICE\_UUID}}
+{\footnotesize\ttfamily \label{ble__manager_8c_a8993052a0b649f39fa9f8d74e11ae97e} 
+\#define BLE\+\_\+\+ADV\+\_\+\+SERVICE\+\_\+\+UUID~0x1811}
+
+
+
+\doxysubsection{Function Documentation}
+\Hypertarget{ble__manager_8c_a0e55afff5c0665e50069b09d2af4f6d9}\index{ble\_manager.c@{ble\_manager.c}!ble\_manager\_init@{ble\_manager\_init}}
+\index{ble\_manager\_init@{ble\_manager\_init}!ble\_manager.c@{ble\_manager.c}}
+\doxysubsubsection{\texorpdfstring{ble\_manager\_init()}{ble\_manager\_init()}}
+{\footnotesize\ttfamily \label{ble__manager_8c_a0e55afff5c0665e50069b09d2af4f6d9} 
+esp\+\_\+err\+\_\+t ble\+\_\+manager\+\_\+init (\begin{DoxyParamCaption}\item[{void}]{}{}\end{DoxyParamCaption})}
+
+\Hypertarget{ble__manager_8c_a931b25a8797246e24c60c4a3abae8905}\index{ble\_manager.c@{ble\_manager.c}!ble\_store\_config\_init@{ble\_store\_config\_init}}
+\index{ble\_store\_config\_init@{ble\_store\_config\_init}!ble\_manager.c@{ble\_manager.c}}
+\doxysubsubsection{\texorpdfstring{ble\_store\_config\_init()}{ble\_store\_config\_init()}}
+{\footnotesize\ttfamily \label{ble__manager_8c_a931b25a8797246e24c60c4a3abae8905} 
+void ble\+\_\+store\+\_\+config\+\_\+init (\begin{DoxyParamCaption}\item[{void}]{}{}\end{DoxyParamCaption})}
+

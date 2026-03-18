@@ -5,7 +5,7 @@
  * @brief
  *
  * @version 0.1
- * @date 2026-03-03
+ * @date 2026-03-18
  *
  * @copyright Copyright (c) 2026
  *
@@ -20,6 +20,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "configs.h"
+#include "i2c_protocol.h"
 #include "shared_state.h"
 
 typedef struct {
@@ -34,6 +35,7 @@ typedef struct {
 static SemaphoreHandle_t s_state_mutex;
 static vp_state_t s_state;
 static uint8_t s_cached_frame[VP_I2C_FRAME_SIZE];
+static uint32_t s_dirty_flags;
 
 static uint8_t clamp_pct(uint8_t value)
 {
@@ -138,6 +140,7 @@ static void rebuild_cached_frame_locked(void)
 static void commit_state_update_locked(void)
 {
     s_state.seq++;
+    s_dirty_flags |= VP_FLAG_CHANGED;
     rebuild_cached_frame_locked();
 }
 
@@ -150,6 +153,7 @@ static int set_volume_locked(uint8_t volume)
     }
 
     s_state.volume = next;
+    s_dirty_flags |= VP_FLAG_VOL;
     return 1;
 }
 
@@ -162,6 +166,7 @@ static int set_battery_locked(uint8_t battery)
     }
 
     s_state.battery = next;
+    s_dirty_flags |= VP_FLAG_BAT;
     return 1;
 }
 
@@ -175,6 +180,7 @@ static int set_ble_addr_locked(const char *addr)
     }
 
     copy_string(s_state.ble_addr, sizeof(s_state.ble_addr), next);
+    s_dirty_flags |= VP_FLAG_ADDR;
     return 1;
 }
 
@@ -188,6 +194,7 @@ static int set_param1_locked(const char *value)
     }
 
     copy_string(s_state.param1, sizeof(s_state.param1), next);
+    s_dirty_flags |= VP_FLAG_P1;
     return 1;
 }
 
@@ -201,6 +208,7 @@ static int set_param2_locked(const char *value)
     }
 
     copy_string(s_state.param2, sizeof(s_state.param2), next);
+    s_dirty_flags |= VP_FLAG_P2;
     return 1;
 }
 
@@ -290,17 +298,15 @@ void vp_state_init(void)
     lock_state();
     memset(&s_state, 0, sizeof(s_state));
 #if I2C_TESTING_MODE
-    s_state.volume = 2U;
-    s_state.battery = 50U;
-    copy_string(s_state.ble_addr, sizeof(s_state.ble_addr), "AA:BB:CC:DD:EE:FF");
-    copy_string(s_state.param1, sizeof(s_state.param1), "Test Param 1");
-    copy_string(s_state.param2, sizeof(s_state.param2), "Test Param 2");
+    set_volume_locked(2U);
+    set_battery_locked(50U);
+    set_ble_addr_locked("AA:BB:CC:DD:EE:FF");
+    set_param1_locked("Test Param 1");
+    set_param2_locked("Test Param 2");
 #else
-    s_state.volume = 50U;
-    s_state.battery = 87U;
-    copy_string(s_state.ble_addr, sizeof(s_state.ble_addr), "N/A");
-    copy_string(s_state.param1, sizeof(s_state.param1), "");
-    copy_string(s_state.param2, sizeof(s_state.param2), "");
+    set_volume_locked(50U);
+    set_battery_locked(87U);
+    set_ble_addr_locked("N/A");
 #endif
     commit_state_update_locked();
     unlock_state();
@@ -412,6 +418,28 @@ void vp_state_update_from_ble_payload(const uint8_t *payload, uint16_t payload_l
         commit_state_update_locked();
     }
 
+    unlock_state();
+}
+
+uint32_t vp_state_get_dirty_flags(void)
+{
+    uint32_t flags;
+
+    lock_state();
+    flags = s_dirty_flags;
+    unlock_state();
+    return flags;
+}
+
+void vp_state_clear_dirty_bits(uint32_t mask)
+{
+    lock_state();
+    s_dirty_flags &= ~mask;
+
+    /* Auto-clear CHANGED when no parameter bits remain dirty. */
+    if ((s_dirty_flags & VP_PARAM_BITS_MASK) == 0U) {
+        s_dirty_flags &= ~VP_FLAG_CHANGED;
+    }
     unlock_state();
 }
 

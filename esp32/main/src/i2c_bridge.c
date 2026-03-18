@@ -1,20 +1,27 @@
 /**************************************************************************************************/
 /**
  * @file i2c_bridge.c
- * @author
- * @brief
+ * @brief VocalPoint I2C slave mailbox protocol.
+ *
+ * The ESP32-C3 uses the I2C controller's 32-byte internal RAM as two mailboxes:
+ *   - request mailbox  at offset 0x00 (4 bytes)
+ *   - response mailbox at offset 0x04 (28 bytes)
+ *
+ * The RPi writes a 32-bit request register into the request mailbox, waits
+ * VP_SETTLE_MS, then reads the response mailbox. Unlike the FIFO slave API,
+ * there is only one current response at a time, so stale replies are
+ * overwritten instead of being queued indefinitely.
  *
  * @version 0.1
- * @date 2026-03-03
+ * @date 2026-03-18
  *
  * @copyright Copyright (c) 2026
- *
  */
 /**************************************************************************************************/
 
 #include "i2c_bridge.h"
 
-#include <ctype.h>
+#include <inttypes.h>
 #include <string.h>
 
 #include "driver/gpio.h"
@@ -22,143 +29,247 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
 #include "freertos/task.h"
+#include "hal/i2c_ll.h"
+#include "i2c_protocol.h"
+#include "i2c_private.h"
 #include "shared_state.h"
 
-#define I2C_PORT I2C_NUM_0
-#define I2C_SLAVE_ADDR 0x42
-#define I2C_SDA_PIN 6
-#define I2C_SCL_PIN 7
-#define I2C_RX_BUF_LEN 128
-#define I2C_TX_BUF_DEPTH (VP_I2C_FRAME_SIZE * 4)
-#define I2C_STREAM_PERIOD_MS 50
-
-typedef struct {
-    uint8_t data[I2C_RX_BUF_LEN];
-} i2c_rx_item_t;
+#define I2C_PORT                I2C_NUM_0
+#define VP_I2C_SLAVE_ADDR       0x42
+#define I2C_SDA_PIN             6
+#define I2C_SCL_PIN             7
+#define I2C_SEND_BUF_DEPTH      32
+#define I2C_TASK_PRIORITY       1
+#define I2C_TASK_PERIOD_MS      10
 
 static const char *TAG = "i2c_bridge";
 static i2c_slave_dev_handle_t s_i2c_slave;
-static QueueHandle_t s_i2c_rx_queue;
-static uint8_t s_i2c_rx_buffer[I2C_RX_BUF_LEN];
 
-static void i2c_bridge_queue_snapshot(void)
+typedef struct {
+    uint32_t request;
+    uint32_t state_tag;
+} i2c_render_key_t;
+
+static void put_u32_le(uint8_t *buf, uint32_t val)
 {
-    static uint32_t s_last_tx_seq = UINT32_MAX;
-
-    uint8_t tx_frame[VP_I2C_FRAME_SIZE];
-    size_t tx_len = vp_state_build_i2c_frame(tx_frame, sizeof(tx_frame));
-
-    if (tx_len == 0U) {
-        return;
-    }
-
-    uint32_t seq = (uint32_t)tx_frame[2]
-                 | ((uint32_t)tx_frame[3] << 8)
-                 | ((uint32_t)tx_frame[4] << 16)
-                 | ((uint32_t)tx_frame[5] << 24);
-
-    if (seq == s_last_tx_seq) {
-        return;
-    }
-
-    esp_err_t err = i2c_slave_transmit(s_i2c_slave, tx_frame, (int)tx_len, 0);
-    if (err == ESP_OK) {
-        s_last_tx_seq = seq;
-    } else if (err != ESP_ERR_TIMEOUT && err != ESP_ERR_INVALID_STATE) {
-        ESP_LOGW(TAG, "i2c_slave_transmit failed: %s", esp_err_to_name(err));
-    }
+    buf[0] = (uint8_t)(val & 0xFFU);
+    buf[1] = (uint8_t)((val >> 8) & 0xFFU);
+    buf[2] = (uint8_t)((val >> 16) & 0xFFU);
+    buf[3] = (uint8_t)((val >> 24) & 0xFFU);
 }
 
-static esp_err_t i2c_bridge_arm_receive(void)
+static uint32_t get_u32_le(const uint8_t *buf)
 {
-    memset(s_i2c_rx_buffer, 0, sizeof(s_i2c_rx_buffer));
-    return i2c_slave_receive(s_i2c_slave, s_i2c_rx_buffer, sizeof(s_i2c_rx_buffer));
+    return (uint32_t)buf[0]
+         | ((uint32_t)buf[1] << 8)
+         | ((uint32_t)buf[2] << 16)
+         | ((uint32_t)buf[3] << 24);
 }
 
-static IRAM_ATTR bool i2c_bridge_rx_done_callback(i2c_slave_dev_handle_t channel,
-                                                  const i2c_slave_rx_done_event_data_t *edata,
-                                                  void *user_data)
+static uint32_t vp_req_get_offset(uint32_t req_flags)
 {
-    BaseType_t high_task_wakeup = pdFALSE;
-    QueueHandle_t rx_queue = (QueueHandle_t)user_data;
-    i2c_rx_item_t item;
-
-    (void)channel;
-
-    memcpy(item.data, edata->buffer, I2C_RX_BUF_LEN);
-    xQueueSendFromISR(rx_queue, &item, &high_task_wakeup);
-    return high_task_wakeup == pdTRUE;
+    return (req_flags & VP_REQ_OFFSET_MASK) >> VP_REQ_OFFSET_SHIFT;
 }
 
-static size_t i2c_command_length(const uint8_t *data, size_t max_len)
+static uint32_t vp_state_get_render_tag(uint32_t req_flags, const vp_state_snapshot_t *snap)
 {
-    if (data == NULL) {
+    if ((req_flags & VP_REQ_DATA) != 0U) {
+        return snap->seq;
+    }
+
+    return vp_state_get_dirty_flags();
+}
+
+static esp_err_t i2c_mailbox_read_request(uint32_t *out_req)
+{
+    i2c_slave_dev_t *slave = (i2c_slave_dev_t *)s_i2c_slave;
+    uint8_t req_buf[VP_REQ_MAILBOX_LEN];
+
+    if (out_req == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    /* Read directly from the I2C RAM without a critical section.
+     * In access_ram_en mode the hardware updates RAM[0..3] atomically when the
+     * master completes its write transaction.  The 20 ms RPi settle time plus
+     * the master's header-echo retry loop make a torn 4-byte read harmless. */
+    i2c_ll_read_by_nonfifo(slave->base->hal.dev,
+                           VP_REQ_MAILBOX_OFFSET,
+                           req_buf,
+                           VP_REQ_MAILBOX_LEN);
+
+    *out_req = get_u32_le(req_buf);
+    return ESP_OK;
+}
+
+static esp_err_t i2c_mailbox_write_response(const uint8_t *resp, size_t len)
+{
+    uint8_t mailbox[VP_RESP_MAILBOX_LEN];
+
+    if (resp == NULL || len > sizeof(mailbox)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    memset(mailbox, 0, sizeof(mailbox));
+    memcpy(mailbox, resp, len);
+    return i2c_slave_write_ram(s_i2c_slave, VP_RESP_MAILBOX_OFFSET, mailbox, sizeof(mailbox));
+}
+
+static size_t vp_param_payload_info(uint32_t param_bit,
+                                    const vp_state_snapshot_t *snap,
+                                    const uint8_t **payload,
+                                    uint32_t *clear_mask)
+{
+    if (payload == NULL || clear_mask == NULL || snap == NULL) {
         return 0U;
     }
 
-    return strnlen((const char *)data, max_len);
+    if (param_bit == VP_REQ_VOL) {
+        *payload = &snap->volume;
+        *clear_mask = VP_FLAG_VOL;
+        return VP_PAYLOAD_VOL_LEN;
+    }
+
+    if (param_bit == VP_REQ_BAT) {
+        *payload = &snap->battery;
+        *clear_mask = VP_FLAG_BAT;
+        return VP_PAYLOAD_BAT_LEN;
+    }
+
+    if (param_bit == VP_REQ_ADDR) {
+        *payload = (const uint8_t *)snap->ble_addr;
+        *clear_mask = VP_FLAG_ADDR;
+        return VP_PAYLOAD_ADDR_LEN;
+    }
+
+    if (param_bit == VP_REQ_P1) {
+        *payload = (const uint8_t *)snap->param1;
+        *clear_mask = VP_FLAG_P1;
+        return VP_PAYLOAD_P1_LEN;
+    }
+
+    if (param_bit == VP_REQ_P2) {
+        *payload = (const uint8_t *)snap->param2;
+        *clear_mask = VP_FLAG_P2;
+        return VP_PAYLOAD_P2_LEN;
+    }
+
+    *payload = NULL;
+    *clear_mask = 0U;
+    return 0U;
 }
 
-static int i2c_command_is_poll(const uint8_t *data, size_t len)
+static esp_err_t i2c_render_status_response(void)
 {
-    static const char *const poll_cmds[] = {"GET", "READ", "POLL"};
-    char buffer[16];
+    uint8_t resp[VP_STATUS_LEN];
+    uint32_t flags = vp_state_get_dirty_flags();
 
-    if (data == NULL || len == 0U) {
-        return 0;
+    put_u32_le(resp, flags);
+    return i2c_mailbox_write_response(resp, sizeof(resp));
+}
+
+static esp_err_t i2c_render_param_response(uint32_t req_flags, const vp_state_snapshot_t *snap)
+{
+    uint32_t param_bit = req_flags & VP_PARAM_BITS_MASK;
+    uint32_t req_offset = vp_req_get_offset(req_flags);
+    uint8_t resp[VP_RESP_MAILBOX_LEN];
+    const uint8_t *payload = NULL;
+    uint32_t clear_mask = 0U;
+    size_t payload_total;
+    size_t chunk_len = 0U;
+
+    memset(resp, 0, sizeof(resp));
+
+    if (param_bit == 0U || (param_bit & (param_bit - 1U)) != 0U) {
+        ESP_LOGW(TAG, "invalid param request 0x%08" PRIx32, req_flags);
+        return i2c_mailbox_write_response(resp, 0U);
     }
 
-    while (len > 0U && isspace((unsigned char)data[0])) {
-        data++;
-        len--;
+    payload_total = vp_param_payload_info(param_bit, snap, &payload, &clear_mask);
+    if (payload_total == 0U || payload == NULL) {
+        ESP_LOGW(TAG, "unsupported param request 0x%08" PRIx32, req_flags);
+        return i2c_mailbox_write_response(resp, 0U);
     }
+    put_u32_le(resp, req_flags);
 
-    while (len > 0U && isspace((unsigned char)data[len - 1U])) {
-        len--;
-    }
-
-    if (len == 0U || len >= sizeof(buffer)) {
-        return 0;
-    }
-
-    memcpy(buffer, data, len);
-    buffer[len] = '\0';
-
-    for (size_t i = 0; i < len; i++) {
-        buffer[i] = (char)toupper((unsigned char)buffer[i]);
-    }
-
-    for (size_t i = 0; i < sizeof(poll_cmds) / sizeof(poll_cmds[0]); i++) {
-        if (strcmp(buffer, poll_cmds[i]) == 0) {
-            return 1;
+    if (req_offset < payload_total) {
+        chunk_len = payload_total - req_offset;
+        if (chunk_len > VP_RESP_PAYLOAD_MAX) {
+            chunk_len = VP_RESP_PAYLOAD_MAX;
         }
+        memcpy(&resp[VP_RESP_HDR_LEN], payload + req_offset, chunk_len);
+    } else {
+        ESP_LOGW(TAG,
+                 "request offset out of range: req=0x%08" PRIx32 " total=%u",
+                 req_flags,
+                 (unsigned)payload_total);
     }
 
-    return 0;
+    esp_err_t err = i2c_mailbox_write_response(resp, sizeof(resp));
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    if (chunk_len != 0U && (req_offset + chunk_len) >= payload_total) {
+        vp_state_clear_dirty_bits(clear_mask);
+    }
+
+    return ESP_OK;
+}
+
+static esp_err_t i2c_render_response(uint32_t req_flags, const vp_state_snapshot_t *snap)
+{
+    uint32_t unknown_bits = req_flags & ~(VP_REQ_DATA | VP_PARAM_BITS_MASK | VP_REQ_OFFSET_MASK);
+    if (unknown_bits != 0U) {
+        ESP_LOGW(TAG, "request has unknown bits set: req=0x%08" PRIx32, req_flags);
+    }
+
+    if ((req_flags & VP_REQ_DATA) != 0U) {
+        return i2c_render_param_response(req_flags, snap);
+    }
+
+    return i2c_render_status_response();
 }
 
 static void i2c_bridge_task(void *arg)
 {
     (void)arg;
 
-    i2c_rx_item_t rx_item;
-
-    i2c_bridge_queue_snapshot();
-    ESP_ERROR_CHECK(i2c_bridge_arm_receive());
+    i2c_render_key_t last_key = {
+        .request = UINT32_MAX,
+        .state_tag = UINT32_MAX,
+    };
 
     while (1) {
-        if (xQueueReceive(s_i2c_rx_queue, &rx_item, 0) == pdTRUE) {
-            size_t rx_len = i2c_command_length(rx_item.data, sizeof(rx_item.data));
-            if (rx_len > 0U && !i2c_command_is_poll(rx_item.data, rx_len)) {
-                vp_state_update_from_ble_payload(rx_item.data, (uint16_t)rx_len);
+        uint32_t req_flags = 0U;
+        vp_state_snapshot_t snap;
+
+        esp_err_t err = i2c_mailbox_read_request(&req_flags);
+        if (err != ESP_OK) {
+            if (err != ESP_ERR_NOT_FOUND) {
+                ESP_LOGW(TAG, "request mailbox read failed: %s", esp_err_to_name(err));
             }
-            ESP_ERROR_CHECK(i2c_bridge_arm_receive());
+            vTaskDelay(pdMS_TO_TICKS(I2C_TASK_PERIOD_MS));
+            continue;
         }
 
-        i2c_bridge_queue_snapshot();
-        vTaskDelay(pdMS_TO_TICKS(I2C_STREAM_PERIOD_MS));
+        vp_state_get_snapshot(&snap);
+        i2c_render_key_t next_key = {
+            .request = req_flags,
+            .state_tag = vp_state_get_render_tag(req_flags, &snap),
+        };
+
+        if (next_key.request != last_key.request || next_key.state_tag != last_key.state_tag) {
+            err = i2c_render_response(req_flags, &snap);
+            if (err == ESP_OK) {
+                last_key = next_key;
+            } else {
+                ESP_LOGW(TAG, "response render failed: %s", esp_err_to_name(err));
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(I2C_TASK_PERIOD_MS));
     }
 }
 
@@ -169,33 +280,31 @@ void i2c_bridge_init(void)
         .sda_io_num = I2C_SDA_PIN,
         .scl_io_num = I2C_SCL_PIN,
         .clk_source = I2C_CLK_SRC_DEFAULT,
-        .send_buf_depth = I2C_TX_BUF_DEPTH,
-        .slave_addr = I2C_SLAVE_ADDR,
+        /* ESP-IDF still validates and allocates this even in access_ram_en mode. */
+        .send_buf_depth = I2C_SEND_BUF_DEPTH,
+        .slave_addr = VP_I2C_SLAVE_ADDR,
         .addr_bit_len = I2C_ADDR_BIT_LEN_7,
         .intr_priority = 0,
+        .flags.access_ram_en = true,
     };
-    i2c_slave_event_callbacks_t callbacks = {
-        .on_recv_done = i2c_bridge_rx_done_callback,
-    };
+    uint8_t init_ram[VP_I2C_RAM_LEN];
 
     ESP_ERROR_CHECK(gpio_set_pull_mode(I2C_SDA_PIN, GPIO_PULLUP_ONLY));
     ESP_ERROR_CHECK(gpio_set_pull_mode(I2C_SCL_PIN, GPIO_PULLUP_ONLY));
 
-    s_i2c_rx_queue = xQueueCreate(4, sizeof(i2c_rx_item_t));
-    ESP_ERROR_CHECK(s_i2c_rx_queue != NULL ? ESP_OK : ESP_ERR_NO_MEM);
-
     ESP_ERROR_CHECK(i2c_new_slave_device(&conf, &s_i2c_slave));
-    ESP_ERROR_CHECK(i2c_slave_register_event_callbacks(s_i2c_slave, &callbacks, s_i2c_rx_queue));
 
-    // A full slave TX ringbuffer is expected when no master is reading.
-    esp_log_level_set("i2c.slave", ESP_LOG_NONE);
+    memset(init_ram, 0, sizeof(init_ram));
+    ESP_ERROR_CHECK(i2c_slave_write_ram(s_i2c_slave, 0U, init_ram, sizeof(init_ram)));
 
     ESP_LOGI(TAG,
-             "I2C slave ready on port=%d addr=0x%02X sda=%d scl=%d mode=frame_stream",
+             "I2C slave ready  port=%d addr=0x%02X sda=%d scl=%d mode=mailbox req_off=%u resp_off=%u",
              I2C_PORT,
-             I2C_SLAVE_ADDR,
+             VP_I2C_SLAVE_ADDR,
              I2C_SDA_PIN,
-             I2C_SCL_PIN);
+             I2C_SCL_PIN,
+             (unsigned)VP_REQ_MAILBOX_OFFSET,
+             (unsigned)VP_RESP_MAILBOX_OFFSET);
 
-    xTaskCreate(i2c_bridge_task, "i2c_bridge", 4096, NULL, 1, NULL);
+    xTaskCreate(i2c_bridge_task, "i2c_bridge", 4096, NULL, I2C_TASK_PRIORITY, NULL);
 }

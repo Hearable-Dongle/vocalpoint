@@ -1,0 +1,75 @@
+\doxysection{i2c\+\_\+protocol.\+h}
+\hypertarget{i2c__protocol_8h_source}{}\label{i2c__protocol_8h_source}\index{main/include/i2c\_protocol.h@{main/include/i2c\_protocol.h}}
+\mbox{\hyperlink{i2c__protocol_8h}{Go to the documentation of this file.}}
+\begin{DoxyCode}{0}
+\DoxyCodeLine{00001\ \textcolor{comment}{/**************************************************************************************************/}}
+\DoxyCodeLine{00065\ \textcolor{comment}{/**************************************************************************************************/}}
+\DoxyCodeLine{00066\ }
+\DoxyCodeLine{00067\ \textcolor{preprocessor}{\#ifndef\ I2C\_PROTOCOL\_H\_}}
+\DoxyCodeLine{00068\ \textcolor{preprocessor}{\#define\ I2C\_PROTOCOL\_H\_}}
+\DoxyCodeLine{00069\ }
+\DoxyCodeLine{00070\ \textcolor{preprocessor}{\#ifdef\ \_\_cplusplus}}
+\DoxyCodeLine{00071\ \textcolor{keyword}{extern}\ \textcolor{stringliteral}{"{}C"{}}\ \{}
+\DoxyCodeLine{00072\ \textcolor{preprocessor}{\#endif}}
+\DoxyCodeLine{00073\ }
+\DoxyCodeLine{00074\ \textcolor{preprocessor}{\#include\ "{}soc/soc\_caps.h"{}}}
+\DoxyCodeLine{00075\ }
+\DoxyCodeLine{00076\ \textcolor{comment}{/*\ Status\ register\ bits\ (ESP32\ →\ RPi)\ */}}
+\DoxyCodeLine{00077\ \textcolor{preprocessor}{\#define\ VP\_FLAG\_CHANGED\ \ \ \ (1U\ <<\ 0)}}
+\DoxyCodeLine{00078\ \textcolor{preprocessor}{\#define\ VP\_FLAG\_VOL\ \ \ \ \ \ \ \ (1U\ <<\ 2)}}
+\DoxyCodeLine{00079\ \textcolor{preprocessor}{\#define\ VP\_FLAG\_BAT\ \ \ \ \ \ \ \ (1U\ <<\ 3)}}
+\DoxyCodeLine{00080\ \textcolor{preprocessor}{\#define\ VP\_FLAG\_ADDR\ \ \ \ \ \ \ (1U\ <<\ 4)}}
+\DoxyCodeLine{00081\ \textcolor{preprocessor}{\#define\ VP\_FLAG\_P1\ \ \ \ \ \ \ \ \ (1U\ <<\ 5)}}
+\DoxyCodeLine{00082\ \textcolor{preprocessor}{\#define\ VP\_FLAG\_P2\ \ \ \ \ \ \ \ \ (1U\ <<\ 6)}}
+\DoxyCodeLine{00083\ }
+\DoxyCodeLine{00084\ \textcolor{comment}{/*\ Request\ register\ bits\ (RPi\ →\ ESP32)\ */}}
+\DoxyCodeLine{00085\ \textcolor{preprocessor}{\#define\ VP\_REQ\_DATA\ \ \ \ \ \ \ \ (1U\ <<\ 1)}}
+\DoxyCodeLine{00086\ \textcolor{preprocessor}{\#define\ VP\_REQ\_VOL\ \ \ \ \ \ \ \ \ (1U\ <<\ 2)}}
+\DoxyCodeLine{00087\ \textcolor{preprocessor}{\#define\ VP\_REQ\_BAT\ \ \ \ \ \ \ \ \ (1U\ <<\ 3)}}
+\DoxyCodeLine{00088\ \textcolor{preprocessor}{\#define\ VP\_REQ\_ADDR\ \ \ \ \ \ \ \ (1U\ <<\ 4)}}
+\DoxyCodeLine{00089\ \textcolor{preprocessor}{\#define\ VP\_REQ\_P1\ \ \ \ \ \ \ \ \ \ (1U\ <<\ 5)}}
+\DoxyCodeLine{00090\ \textcolor{preprocessor}{\#define\ VP\_REQ\_P2\ \ \ \ \ \ \ \ \ \ (1U\ <<\ 6)}}
+\DoxyCodeLine{00091\ \textcolor{preprocessor}{\#define\ VP\_REQ\_OFFSET\_SHIFT\ 24U}}
+\DoxyCodeLine{00092\ \textcolor{preprocessor}{\#define\ VP\_REQ\_OFFSET\_MASK\ (0xFFU\ <<\ VP\_REQ\_OFFSET\_SHIFT)}}
+\DoxyCodeLine{00093\ }
+\DoxyCodeLine{00094\ \textcolor{comment}{/*\ Mask\ covering\ all\ per-\/parameter\ bits\ (same\ positions\ in\ both\ registers).\ */}}
+\DoxyCodeLine{00095\ \textcolor{preprocessor}{\#define\ VP\_PARAM\_BITS\_MASK\ (VP\_FLAG\_VOL\ |\ VP\_FLAG\_BAT\ |\ VP\_FLAG\_ADDR\ |\ VP\_FLAG\_P1\ |\ VP\_FLAG\_P2)}}
+\DoxyCodeLine{00096\ }
+\DoxyCodeLine{00097\ \textcolor{comment}{/*\ Payload\ sizes\ */}}
+\DoxyCodeLine{00098\ \textcolor{preprocessor}{\#define\ VP\_PAYLOAD\_VOL\_LEN\ \ \ 1U}}
+\DoxyCodeLine{00099\ \textcolor{preprocessor}{\#define\ VP\_PAYLOAD\_BAT\_LEN\ \ \ 1U}}
+\DoxyCodeLine{00100\ \textcolor{preprocessor}{\#define\ VP\_PAYLOAD\_ADDR\_LEN\ \ 40U}}
+\DoxyCodeLine{00101\ \textcolor{preprocessor}{\#define\ VP\_PAYLOAD\_P1\_LEN\ \ \ \ 32U}}
+\DoxyCodeLine{00102\ \textcolor{preprocessor}{\#define\ VP\_PAYLOAD\_P2\_LEN\ \ \ \ 32U}}
+\DoxyCodeLine{00103\ }
+\DoxyCodeLine{00104\ \textcolor{comment}{/*\ Wire\ sizes\ */}}
+\DoxyCodeLine{00105\ \textcolor{preprocessor}{\#define\ VP\_STATUS\_LEN\ \ \ \ \ \ 4U\ \ \ }\textcolor{comment}{/*\ Status\ or\ request\ register\ is\ always\ 4\ bytes\ */}\textcolor{preprocessor}{}}
+\DoxyCodeLine{00106\ \textcolor{preprocessor}{\#define\ VP\_RESP\_HDR\_LEN\ \ \ \ 4U\ \ \ }\textcolor{comment}{/*\ Response\ header\ (flags)\ prefix\ on\ param\ replies\ */}\textcolor{preprocessor}{}}
+\DoxyCodeLine{00107\ }
+\DoxyCodeLine{00108\ \textcolor{comment}{/*\ Logical\ response\ lengths\ including\ the\ 4-\/byte\ header\ */}}
+\DoxyCodeLine{00109\ \textcolor{preprocessor}{\#define\ VP\_RESP\_VOL\_LEN\ \ \ \ (VP\_RESP\_HDR\_LEN\ +\ VP\_PAYLOAD\_VOL\_LEN)}}
+\DoxyCodeLine{00110\ \textcolor{preprocessor}{\#define\ VP\_RESP\_BAT\_LEN\ \ \ \ (VP\_RESP\_HDR\_LEN\ +\ VP\_PAYLOAD\_BAT\_LEN)}}
+\DoxyCodeLine{00111\ \textcolor{preprocessor}{\#define\ VP\_RESP\_ADDR\_LEN\ \ \ (VP\_RESP\_HDR\_LEN\ +\ VP\_PAYLOAD\_ADDR\_LEN)}}
+\DoxyCodeLine{00112\ \textcolor{preprocessor}{\#define\ VP\_RESP\_P1\_LEN\ \ \ \ \ (VP\_RESP\_HDR\_LEN\ +\ VP\_PAYLOAD\_P1\_LEN)}}
+\DoxyCodeLine{00113\ \textcolor{preprocessor}{\#define\ VP\_RESP\_P2\_LEN\ \ \ \ \ (VP\_RESP\_HDR\_LEN\ +\ VP\_PAYLOAD\_P2\_LEN)}}
+\DoxyCodeLine{00114\ }
+\DoxyCodeLine{00115\ \textcolor{comment}{/*\ Mailbox\ /\ chunk\ transport\ sizes\ */}}
+\DoxyCodeLine{00116\ \textcolor{preprocessor}{\#define\ VP\_I2C\_RAM\_LEN\ \ \ \ \ \ \ \ SOC\_I2C\_FIFO\_LEN}}
+\DoxyCodeLine{00117\ \textcolor{preprocessor}{\#define\ VP\_REQ\_MAILBOX\_OFFSET\ 0U}}
+\DoxyCodeLine{00118\ \textcolor{preprocessor}{\#define\ VP\_REQ\_MAILBOX\_LEN\ \ \ \ VP\_STATUS\_LEN}}
+\DoxyCodeLine{00119\ \textcolor{preprocessor}{\#define\ VP\_RESP\_MAILBOX\_OFFSET\ VP\_REQ\_MAILBOX\_LEN}}
+\DoxyCodeLine{00120\ \textcolor{preprocessor}{\#define\ VP\_RESP\_MAILBOX\_LEN\ \ \ (VP\_I2C\_RAM\_LEN\ -\/\ VP\_RESP\_MAILBOX\_OFFSET)}}
+\DoxyCodeLine{00121\ \textcolor{preprocessor}{\#define\ VP\_RESP\_PAYLOAD\_MAX\ \ \ (VP\_RESP\_MAILBOX\_LEN\ -\/\ VP\_RESP\_HDR\_LEN)}}
+\DoxyCodeLine{00122\ }
+\DoxyCodeLine{00123\ \textcolor{comment}{/*\ Minimum\ settle\ time\ the\ RPi\ must\ wait\ between\ writing\ a\ request\ and\ reading}}
+\DoxyCodeLine{00124\ \textcolor{comment}{\ *\ the\ response.\ \ This\ gives\ the\ ESP32\ time\ to\ process\ the\ request\ and\ load\ its}}
+\DoxyCodeLine{00125\ \textcolor{comment}{\ *\ TX\ buffer.\ \ Value\ is\ in\ milliseconds.\ */}}
+\DoxyCodeLine{00126\ \textcolor{preprocessor}{\#define\ VP\_SETTLE\_MS\ \ \ \ \ \ \ 20U}}
+\DoxyCodeLine{00127\ }
+\DoxyCodeLine{00128\ \textcolor{preprocessor}{\#ifdef\ \_\_cplusplus}}
+\DoxyCodeLine{00129\ \}}
+\DoxyCodeLine{00130\ \textcolor{preprocessor}{\#endif}}
+\DoxyCodeLine{00131\ }
+\DoxyCodeLine{00132\ \textcolor{preprocessor}{\#endif\ }\textcolor{comment}{//\ I2C\_PROTOCOL\_H\_}}
+
+\end{DoxyCode}

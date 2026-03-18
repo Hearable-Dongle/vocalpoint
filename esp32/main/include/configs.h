@@ -16,5 +16,6 @@
 #define CONFIGS_H
 
 #define I2C_TESTING_MODE 0
+#define LOG_TESTING_MODE 1
 
 #endif // CONFIGS_H

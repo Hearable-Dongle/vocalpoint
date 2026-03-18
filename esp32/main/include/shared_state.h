@@ -166,6 +166,35 @@ void vp_state_update_from_ble_payload(const uint8_t *payload, uint16_t payload_l
 
 /**************************************************************************************************/
 /**
+ * @name vp_state_get_dirty_flags
+ * @brief Returns the current 32-bit dirty-flag register without clearing it.
+ *
+ * Bit positions match the VP_FLAG_* constants in i2c_protocol.h.
+ * VP_FLAG_CHANGED (bit 0) is set whenever any field has been updated.
+ * Individual parameter bits (VP_FLAG_VOL, VP_FLAG_BAT, …) reflect which
+ * fields have changed since the last call to vp_state_clear_dirty_bits().
+ *
+ * @return uint32_t Current dirty flags.
+ */
+/**************************************************************************************************/
+uint32_t vp_state_get_dirty_flags(void);
+
+/**************************************************************************************************/
+/**
+ * @name vp_state_clear_dirty_bits
+ * @brief Atomically clears the specified bits from the dirty-flag register.
+ *
+ * Called by i2c_bridge after the RPi has successfully fetched a parameter.
+ * If clearing the last parameter bit also makes VP_PARAM_BITS_MASK == 0,
+ * VP_FLAG_CHANGED is automatically cleared as well.
+ *
+ * @param mask  Bitmask of VP_FLAG_* bits to clear.
+ */
+/**************************************************************************************************/
+void vp_state_clear_dirty_bits(uint32_t mask);
+
+/**************************************************************************************************/
+/**
  * @name vp_state_testing_tick
  * @brief Advances the dummy shared state once when I2C testing mode is enabled.
  *
