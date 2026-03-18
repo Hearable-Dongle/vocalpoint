@@ -286,8 +286,8 @@ class BT_Interface:
             self.__log_failure("info", device=mac, error=str(e))
             return ""
     
-    def devices(self) -> dict:
-        """Get list of paired devices"""
+    def devices(self, audio_sink: bool = True) -> dict:
+        """Get list of paired audio sink devices"""
         try:
             # Get the Managed Objects from ObjectManager
             om = dbus.Interface(
@@ -301,13 +301,14 @@ class BT_Interface:
             for path, interfaces in managed_objs.items():
                 device_iface = interfaces.get(BLUEZ_SERVICE + '.Device1')
                 if device_iface:
-                    # Check if device is paired
+                    # Check if device is paired and is an audio sink
                     if device_iface.get('Paired'):
-                        address = device_iface.get('Address')
-                        name = device_iface.get('Name', 'Unknown')
-                        devices_dict[address] = name
-            
-            log_str = f"Found {len(devices_dict)} paired devices:\n"
+                        if self.__is_audio_sink(device_iface) or not audio_sink:
+                            address = device_iface.get('Address')
+                            name = device_iface.get('Name', 'Unknown')
+                            devices_dict[address] = name
+
+            log_str = f"Found {len(devices_dict)} paired audio sinks:\n"
             for address, name in devices_dict.items():
                 log_str += f"\t{str(address)}: {name}\n"
             self.__logger.info(log_str)
@@ -317,7 +318,26 @@ class BT_Interface:
             self.__log_failure("devices", error=str(e))
             return {}
     
-    def scan(self, duration: int) -> dict:
+    def __is_audio_sink(self, device_props) -> bool:
+        """Check if a device is an audio sink"""
+        # Audio Sink UUID: 0000110b-0000-1000-8000-00805f9b34fb
+        audio_sink_uuid = '0000110b-0000-1000-8000-00805f9b34fb'
+
+        # Check if device has the Audio Sink UUID
+        uuids = device_props.get('UUIDs', [])
+        if audio_sink_uuid in uuids:
+            return True
+
+        # Check major device class (0x04 = Audio/Video device)
+        device_class = device_props.get('Class', 0)
+        major_device_class = (device_class >> 8) & 0xFF
+        if major_device_class == 0x04:
+            return True
+        
+        # If neither check passed, it's not an audio sink
+        return False
+    
+    def scan(self, duration: int, audio_sink: bool = True) -> dict:
         """Scan for nearby Bluetooth devices"""
         try:
             adapter = self.__get_adapter()
@@ -348,11 +368,13 @@ class BT_Interface:
             for path, interfaces in managed_objs.items():
                 device_iface = interfaces.get(BLUEZ_SERVICE + '.Device1')
                 if device_iface:
-                    address = device_iface.get('Address')
-                    name = device_iface.get('Name', 'Unknown')
-                    devices_dict[address] = name
+                    # Filter for audio sink devices only
+                    if self.__is_audio_sink(device_iface) or not audio_sink:
+                        address = device_iface.get('Address')
+                        name = device_iface.get('Name', 'Unknown')
+                        devices_dict[address] = name
 
-            log_str = f"Discovery found {len(devices_dict)} devices:\n"
+            log_str = f"Discovery found {len(devices_dict)} audio sink devices:\n"
             for address, name in devices_dict.items():
                 log_str += f"\t{str(address)}: {name}\n"
             self.__logger.info(log_str)
