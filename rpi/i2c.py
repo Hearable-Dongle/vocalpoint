@@ -35,6 +35,8 @@ VP_FLAG_REBOOT                  = 1 << 4
 VP_FLAG_AUDIO_OUT_NAME          = 1 << 5
 VP_FLAG_WIFI_SSID               = 1 << 6
 VP_FLAG_WIFI_PWD                = 1 << 7
+VP_FLAG_AUDIO_OUT_DISCONNECT    = 1 << 8
+VP_FLAG_AUDIO_OUT_FORGET        = 1 << 9
 
 VP_REQ_DATA                     = 1 << 1
 VP_REQ_VOL                      = 1 << 2
@@ -45,15 +47,19 @@ VP_REQ_WIFI_PWD                 = 1 << 7
 VP_REQ_WRITE                    = 1 << 8
 VP_REQ_WRITE_VOICE_PROFILE      = 1 << 9
 VP_REQ_ACK_REBOOT               = 1 << 10
+VP_REQ_AUDIO_OUT_DISCONNECT     = 1 << 11
+VP_REQ_AUDIO_OUT_FORGET         = 1 << 12
 VP_REQ_WRITE_AUDIO_OUT_NAME     = VP_REQ_AUDIO_OUT_NAME
 VP_REQ_OFFSET_SHIFT             = 24
 
-VP_FETCH_PARAM_BITS = (
+VP_FETCH_PARAM_STATUS_BITS = (
     VP_FLAG_VOL
     | VP_FLAG_VOICE_PROFILE_NUM
     | VP_FLAG_AUDIO_OUT_NAME
     | VP_FLAG_WIFI_SSID
     | VP_FLAG_WIFI_PWD
+    | VP_FLAG_AUDIO_OUT_DISCONNECT
+    | VP_FLAG_AUDIO_OUT_FORGET
 )
 VP_STATUS_BITS = (
     VP_FLAG_CHANGED
@@ -63,6 +69,8 @@ VP_STATUS_BITS = (
     | VP_FLAG_AUDIO_OUT_NAME
     | VP_FLAG_WIFI_SSID
     | VP_FLAG_WIFI_PWD
+    | VP_FLAG_AUDIO_OUT_DISCONNECT
+    | VP_FLAG_AUDIO_OUT_FORGET
 )
 
 VP_STATUS_LEN = 4
@@ -80,6 +88,8 @@ PARAM_PAYLOAD_SIZES: dict[int, int] = {
     VP_FLAG_AUDIO_OUT_NAME: 32,
     VP_FLAG_WIFI_SSID: 32,
     VP_FLAG_WIFI_PWD: 32,
+    VP_FLAG_AUDIO_OUT_DISCONNECT: 32,
+    VP_FLAG_AUDIO_OUT_FORGET: 32,
 }
 
 PARAM_FLAG_TO_FIELD: dict[int, str] = {
@@ -88,6 +98,18 @@ PARAM_FLAG_TO_FIELD: dict[int, str] = {
     VP_FLAG_AUDIO_OUT_NAME: "audio_out_name",
     VP_FLAG_WIFI_SSID: "wifi_ssid",
     VP_FLAG_WIFI_PWD: "wifi_pwd",
+    VP_FLAG_AUDIO_OUT_DISCONNECT: "audio_out_disconnect_name",
+    VP_FLAG_AUDIO_OUT_FORGET: "audio_out_forget_name",
+}
+
+PARAM_FLAG_TO_REQ: dict[int, int] = {
+    VP_FLAG_VOL: VP_REQ_VOL,
+    VP_FLAG_VOICE_PROFILE_NUM: VP_REQ_VOICE_PROFILE_NUM,
+    VP_FLAG_AUDIO_OUT_NAME: VP_REQ_AUDIO_OUT_NAME,
+    VP_FLAG_WIFI_SSID: VP_REQ_WIFI_SSID,
+    VP_FLAG_WIFI_PWD: VP_REQ_WIFI_PWD,
+    VP_FLAG_AUDIO_OUT_DISCONNECT: VP_REQ_AUDIO_OUT_DISCONNECT,
+    VP_FLAG_AUDIO_OUT_FORGET: VP_REQ_AUDIO_OUT_FORGET,
 }
 
 SETTLE_SEC = 0.020
@@ -122,6 +144,8 @@ class DeviceState:
     audio_out_name: str = ""
     wifi_ssid: str = ""
     wifi_pwd: str = ""
+    audio_out_disconnect_name: str = ""
+    audio_out_forget_name: str = ""
 
 
 def _write_request(bus: SMBus, address: int, flags: int) -> None:
@@ -193,11 +217,12 @@ def ack_reboot_request(bus: SMBus, address: int) -> None:
 
 def read_param(bus: SMBus, address: int, param_bit: int) -> bytes:
     payload_size = PARAM_PAYLOAD_SIZES[param_bit]
+    request_bit = PARAM_FLAG_TO_REQ[param_bit]
     collected = bytearray()
     offset = 0
 
     while offset < payload_size:
-        expected = _req_with_offset(param_bit, offset)
+        expected = _req_with_offset(request_bit, offset)
         chunk_size = min(VP_RESP_PAYLOAD_MAX, payload_size - offset)
         total = VP_RESP_HDR_LEN + chunk_size
         last_err: ValueError | None = None
@@ -244,6 +269,10 @@ def apply_param(state: DeviceState, param_bit: int, raw: bytes) -> None:
         state.wifi_ssid = _decode_string(raw)
     elif param_bit == VP_FLAG_WIFI_PWD:
         state.wifi_pwd = _decode_string(raw)
+    elif param_bit == VP_FLAG_AUDIO_OUT_DISCONNECT:
+        state.audio_out_disconnect_name = _decode_string(raw)
+    elif param_bit == VP_FLAG_AUDIO_OUT_FORGET:
+        state.audio_out_forget_name = _decode_string(raw)
 
 
 class I2C_Interface:
@@ -316,6 +345,12 @@ class I2C_Interface:
     def get_wifi_pwd(self) -> str:
         return self.get_state().wifi_pwd
 
+    def get_audio_out_disconnect_name(self) -> str:
+        return self.get_state().audio_out_disconnect_name
+
+    def get_audio_out_forget_name(self) -> str:
+        return self.get_state().audio_out_forget_name
+
     def write_voice_profile_name(self, voice_name: str) -> None:
         assert self._bus is not None
         write_voice_profile_name(self._bus, self.address, voice_name)
@@ -372,7 +407,7 @@ class I2C_Interface:
             return False
 
         if flags & VP_FLAG_CHANGED:
-            self._pending_dirty |= (flags & VP_FETCH_PARAM_BITS)
+            self._pending_dirty |= (flags & VP_FETCH_PARAM_STATUS_BITS)
 
         changed = False
         for param_bit in (
@@ -381,6 +416,8 @@ class I2C_Interface:
             VP_FLAG_AUDIO_OUT_NAME,
             VP_FLAG_WIFI_SSID,
             VP_FLAG_WIFI_PWD,
+            VP_FLAG_AUDIO_OUT_DISCONNECT,
+            VP_FLAG_AUDIO_OUT_FORGET,
         ):
             if not (self._pending_dirty & param_bit):
                 continue

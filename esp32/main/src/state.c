@@ -28,6 +28,8 @@ typedef struct {
     char audio_out_name_set[VP_PARAM_MAX_LEN];
     char wifi_ssid[VP_PARAM_MAX_LEN];
     char wifi_pwd[VP_PARAM_MAX_LEN];
+    char audio_out_disconnect_name[VP_PARAM_MAX_LEN];
+    char audio_out_forget_name[VP_PARAM_MAX_LEN];
     uint8_t voice_profile_name_num;
     char voice_profile_name[VP_VOICE_PROFILE_NAME_MAX_LEN];
     char voice_profile_catalog[VP_MAX_VOICE_PROFILES][VP_VOICE_PROFILE_NAME_MAX_LEN];
@@ -162,6 +164,16 @@ static void rebuild_cached_frame_locked(void)
     memcpy(&s_cached_frame[offset], s_state.wifi_pwd, sizeof(s_state.wifi_pwd));
     offset += sizeof(s_state.wifi_pwd);
 
+    memcpy(&s_cached_frame[offset],
+           s_state.audio_out_disconnect_name,
+           sizeof(s_state.audio_out_disconnect_name));
+    offset += sizeof(s_state.audio_out_disconnect_name);
+
+    memcpy(&s_cached_frame[offset],
+           s_state.audio_out_forget_name,
+           sizeof(s_state.audio_out_forget_name));
+    offset += sizeof(s_state.audio_out_forget_name);
+
     s_cached_frame[offset++] = s_state.voice_profile_name_num;
 
     memcpy(&s_cached_frame[offset], s_state.voice_profile_name, sizeof(s_state.voice_profile_name));
@@ -265,6 +277,32 @@ static int set_wifi_pwd_locked(const char *value)
     }
 
     copy_string(s_state.wifi_pwd, sizeof(s_state.wifi_pwd), next);
+    return 1;
+}
+
+static int set_audio_out_disconnect_name_locked(const char *value)
+{
+    char next[VP_PARAM_MAX_LEN];
+
+    copy_string(next, sizeof(next), value);
+    if (strings_equal(s_state.audio_out_disconnect_name, next)) {
+        return 0;
+    }
+
+    copy_string(s_state.audio_out_disconnect_name, sizeof(s_state.audio_out_disconnect_name), next);
+    return 1;
+}
+
+static int set_audio_out_forget_name_locked(const char *value)
+{
+    char next[VP_PARAM_MAX_LEN];
+
+    copy_string(next, sizeof(next), value);
+    if (strings_equal(s_state.audio_out_forget_name, next)) {
+        return 0;
+    }
+
+    copy_string(s_state.audio_out_forget_name, sizeof(s_state.audio_out_forget_name), next);
     return 1;
 }
 
@@ -428,6 +466,22 @@ static int parse_and_apply_token_locked(char *token, uint32_t *dirty_mask)
         return 0;
     }
 
+    if (key_equals(key, "AUDIO_OUT_DISCONNECT")) {
+        if (set_audio_out_disconnect_name_locked(value)) {
+            *dirty_mask |= VP_FLAG_AUDIO_OUT_DISCONNECT;
+            return 1;
+        }
+        return 0;
+    }
+
+    if (key_equals(key, "AUDIO_OUT_FORGET")) {
+        if (set_audio_out_forget_name_locked(value)) {
+            *dirty_mask |= VP_FLAG_AUDIO_OUT_FORGET;
+            return 1;
+        }
+        return 0;
+    }
+
     if (key_equals(key, "VOICE_PROFILE_NAME") || key_equals(key, "VOICE_PROFILE") ||
         key_equals(key, "VOICE")) {
         if (register_voice_profile_name_locked(value)) {
@@ -466,6 +520,8 @@ void vp_state_init(void)
     (void)set_audio_out_name_set_locked("Test Output");
     (void)set_wifi_ssid_locked("Test SSID");
     (void)set_wifi_pwd_locked("Test Password");
+    (void)set_audio_out_disconnect_name_locked("");
+    (void)set_audio_out_forget_name_locked("");
     (void)register_voice_profile_name_locked("Test Voice");
     commit_state_update_locked(VP_FLAG_VOL | VP_FLAG_VOICE_PROFILE_NUM |
                                VP_FLAG_AUDIO_OUT_NAME | VP_FLAG_WIFI_SSID | VP_FLAG_WIFI_PWD);
@@ -477,6 +533,8 @@ void vp_state_init(void)
     (void)set_audio_out_name_set_locked("");
     (void)set_wifi_ssid_locked("");
     (void)set_wifi_pwd_locked("");
+    (void)set_audio_out_disconnect_name_locked("");
+    (void)set_audio_out_forget_name_locked("");
     (void)register_voice_profile_name_locked("");
     commit_state_update_locked(VP_FLAG_VOL | VP_FLAG_VOICE_PROFILE_NUM |
                                VP_FLAG_AUDIO_OUT_NAME | VP_FLAG_WIFI_SSID | VP_FLAG_WIFI_PWD);
@@ -576,6 +634,12 @@ void vp_state_get_snapshot(vp_state_snapshot_t *out)
                 s_state.audio_out_name_set);
     copy_string(out->wifi_ssid, sizeof(out->wifi_ssid), s_state.wifi_ssid);
     copy_string(out->wifi_pwd, sizeof(out->wifi_pwd), s_state.wifi_pwd);
+    copy_string(out->audio_out_disconnect_name,
+                sizeof(out->audio_out_disconnect_name),
+                s_state.audio_out_disconnect_name);
+    copy_string(out->audio_out_forget_name,
+                sizeof(out->audio_out_forget_name),
+                s_state.audio_out_forget_name);
     out->voice_profile_name_num = s_state.voice_profile_name_num;
     copy_string(out->voice_profile_name,
                 sizeof(out->voice_profile_name),
@@ -679,6 +743,8 @@ void vp_state_testing_tick(void)
     (void)set_audio_out_name_set_locked(audio_out_name);
     (void)set_wifi_ssid_locked(wifi_ssid);
     (void)set_wifi_pwd_locked("TestPassword");
+    (void)set_audio_out_disconnect_name_locked("");
+    (void)set_audio_out_forget_name_locked("");
     (void)register_voice_profile_name_locked(voice_name);
 
     tick_count++;

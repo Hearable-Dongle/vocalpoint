@@ -37,10 +37,11 @@ extern "C" {
 #define VP_FRAME_MAGIC          0xA5
 #define VP_FRAME_VERSION        0x01
 
-// Current total size is 205 bytes before CRC, 207 bytes including CRC.
+// Current total size is 269 bytes before CRC, 271 bytes including CRC.
 #define VP_I2C_FRAME_SIZE (VP_MAGIC_BIT_LEN + VP_FRAME_VERSION_LEN + VP_SEQ_MAX_LEN + VP_VOLUME_LEN + \
                            VP_VOICE_PROFILE_NUM_LEN + VP_BLE_ADDR_MAX_LEN + VP_PARAM_MAX_LEN + \
                            VP_PARAM_MAX_LEN + VP_PARAM_MAX_LEN + VP_PARAM_MAX_LEN + \
+                           VP_PARAM_MAX_LEN + VP_PARAM_MAX_LEN + \
                            VP_VOICE_PROFILE_NAME_NUM_LEN + VP_VOICE_PROFILE_NAME_MAX_LEN + \
                            VP_CRC16_LEN)
 
@@ -53,6 +54,8 @@ typedef struct {
     char audio_out_name_set[VP_PARAM_MAX_LEN];
     char wifi_ssid[VP_PARAM_MAX_LEN];
     char wifi_pwd[VP_PARAM_MAX_LEN];
+    char audio_out_disconnect_name[VP_PARAM_MAX_LEN];
+    char audio_out_forget_name[VP_PARAM_MAX_LEN];
     uint8_t voice_profile_name_num;
     char voice_profile_name[VP_VOICE_PROFILE_NAME_MAX_LEN];
 } vp_state_snapshot_t;

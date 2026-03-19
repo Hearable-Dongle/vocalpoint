@@ -24,7 +24,9 @@
  *   bit 8   VP_REQ_WRITE  set to 1 when issuing a write command
  *   bit 9   VP_REQ_WRITE_VOICE_PROFILE  payload mailbox contains a voice profile name
  *   bit 10  VP_REQ_ACK_REBOOT acknowledge and clear a pending reboot request
- *   bits 11-23 reserved, must be 0
+ *   bit 11  VP_REQ_AUDIO_OUT_DISCONNECT want pending output-device disconnect name
+ *   bit 12  VP_REQ_AUDIO_OUT_FORGET     want pending output-device forget name
+ *   bits 13-23 reserved, must be 0
  *   bits 24-31 VP_REQ_OFFSET  byte offset within the requested parameter payload
  *
  *   Special case: request == 0x00000000 → read status register only.
@@ -39,7 +41,9 @@
  *   bit 5   VP_FLAG_AUDIO_OUT_NAME     selected audio output device name changed
  *   bit 6   VP_FLAG_WIFI_SSID          Wi-Fi SSID changed
  *   bit 7   VP_FLAG_WIFI_PWD           Wi-Fi password changed
- *   bits 8-31  reserved / future error flags
+ *   bit 8   VP_FLAG_AUDIO_OUT_DISCONNECT pending output-device disconnect request
+ *   bit 9   VP_FLAG_AUDIO_OUT_FORGET     pending output-device forget request
+ *   bits 10-31  reserved / future error flags
  *
  * Param response (ESP32 → RPi, chunked mailbox read)
  * ---------------------------------------------
@@ -48,7 +52,7 @@
  *   [4..N]  raw parameter data chunk
  *
  *   Volume / voice_profile_num: 1 byte  (uint8_t, 0-100)
- *   Audio output / Wi-Fi fields: 32 bytes (null-padded UTF-8 string)
+ *   Audio output / Wi-Fi / output-action name fields: 32 bytes (null-padded UTF-8 string)
  *
  * Mailbox layout (ESP32-C3 I2C RAM is 32 bytes total)
  * ----------------------------------------------------
@@ -101,6 +105,8 @@ extern "C" {
 #define VP_FLAG_AUDIO_OUT_NAME      (1U << 5)
 #define VP_FLAG_WIFI_SSID           (1U << 6)
 #define VP_FLAG_WIFI_PWD            (1U << 7)
+#define VP_FLAG_AUDIO_OUT_DISCONNECT (1U << 8)
+#define VP_FLAG_AUDIO_OUT_FORGET    (1U << 9)
 
 /* Request register bits (RPi → ESP32) */
 #define VP_REQ_DATA                 (1U << 1)
@@ -112,19 +118,30 @@ extern "C" {
 #define VP_REQ_WRITE                (1U << 8)
 #define VP_REQ_WRITE_VOICE_PROFILE  (1U << 9)
 #define VP_REQ_ACK_REBOOT           (1U << 10)
+#define VP_REQ_AUDIO_OUT_DISCONNECT (1U << 11)
+#define VP_REQ_AUDIO_OUT_FORGET     (1U << 12)
 #define VP_REQ_WRITE_AUDIO_OUT_NAME VP_REQ_AUDIO_OUT_NAME
 #define VP_REQ_OFFSET_SHIFT         24U
 #define VP_REQ_OFFSET_MASK          (0xFFU << VP_REQ_OFFSET_SHIFT)
 
-/* Request bits that map to fetchable parameter payloads. */
-#define VP_FETCH_PARAM_BITS_MASK (VP_FLAG_VOL | VP_FLAG_VOICE_PROFILE_NUM | \
-                                  VP_FLAG_AUDIO_OUT_NAME | VP_FLAG_WIFI_SSID | VP_FLAG_WIFI_PWD)
+/* RPi request bits that map to fetchable parameter payloads. */
+#define VP_REQ_FETCH_PARAM_BITS_MASK (VP_REQ_VOL | VP_REQ_VOICE_PROFILE_NUM | \
+                                      VP_REQ_AUDIO_OUT_NAME | VP_REQ_WIFI_SSID | \
+                                      VP_REQ_WIFI_PWD | VP_REQ_AUDIO_OUT_DISCONNECT | \
+                                      VP_REQ_AUDIO_OUT_FORGET)
+
+/* ESP32 status bits that map to fetchable parameter payloads. */
+#define VP_FLAG_FETCH_PARAM_BITS_MASK (VP_FLAG_VOL | VP_FLAG_VOICE_PROFILE_NUM | \
+                                       VP_FLAG_AUDIO_OUT_NAME | VP_FLAG_WIFI_SSID | \
+                                       VP_FLAG_WIFI_PWD | VP_FLAG_AUDIO_OUT_DISCONNECT | \
+                                       VP_FLAG_AUDIO_OUT_FORGET)
 
 /* Defined low-byte ESP32->RPi status bits. Bit 4 now reuses the old BLE UUID
  * slot as a reboot request flag. */
 #define VP_STATUS_BITS_MASK (VP_FLAG_CHANGED | VP_FLAG_VOL | VP_FLAG_VOICE_PROFILE_NUM | \
                              VP_FLAG_REBOOT | VP_FLAG_AUDIO_OUT_NAME | VP_FLAG_WIFI_SSID | \
-                             VP_FLAG_WIFI_PWD)
+                             VP_FLAG_WIFI_PWD | VP_FLAG_AUDIO_OUT_DISCONNECT | \
+                             VP_FLAG_AUDIO_OUT_FORGET)
 
 /* Payload sizes */
 #define VP_PAYLOAD_VOL_LEN              1U
@@ -132,6 +149,8 @@ extern "C" {
 #define VP_PAYLOAD_AUDIO_OUT_NAME_LEN   32U
 #define VP_PAYLOAD_WIFI_SSID_LEN        32U
 #define VP_PAYLOAD_WIFI_PWD_LEN         32U
+#define VP_PAYLOAD_AUDIO_OUT_DISCONNECT_LEN 32U
+#define VP_PAYLOAD_AUDIO_OUT_FORGET_LEN 32U
 
 /* Wire sizes */
 #define VP_STATUS_LEN      4U   /* Status or request register is always 4 bytes */
@@ -143,6 +162,8 @@ extern "C" {
 #define VP_RESP_AUDIO_OUT_NAME_LEN  (VP_RESP_HDR_LEN + VP_PAYLOAD_AUDIO_OUT_NAME_LEN)
 #define VP_RESP_WIFI_SSID_LEN       (VP_RESP_HDR_LEN + VP_PAYLOAD_WIFI_SSID_LEN)
 #define VP_RESP_WIFI_PWD_LEN        (VP_RESP_HDR_LEN + VP_PAYLOAD_WIFI_PWD_LEN)
+#define VP_RESP_AUDIO_OUT_DISCONNECT_LEN (VP_RESP_HDR_LEN + VP_PAYLOAD_AUDIO_OUT_DISCONNECT_LEN)
+#define VP_RESP_AUDIO_OUT_FORGET_LEN (VP_RESP_HDR_LEN + VP_PAYLOAD_AUDIO_OUT_FORGET_LEN)
 
 /* Mailbox / chunk transport sizes */
 #define VP_I2C_RAM_LEN          SOC_I2C_FIFO_LEN
