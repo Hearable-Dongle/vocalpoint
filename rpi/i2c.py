@@ -386,9 +386,19 @@ class I2C_Interface:
             try:
                 raw = read_param(self._bus, self.address, param_bit)
                 with self._state_lock:
+                    previous_state = replace(self.state)
                     apply_param(self.state, param_bit, raw)
+                    updated_state = replace(self.state)
                 self._pending_dirty &= ~param_bit
                 changed = True
+                if self.emit_logs and param_bit in (VP_FLAG_WIFI_SSID, VP_FLAG_WIFI_PWD):
+                    print(
+                        "[i2c] wifi state updated:"
+                        f" ssid='{updated_state.wifi_ssid}'"
+                        f" pwd_len={len(updated_state.wifi_pwd)}"
+                        f" previous_ssid='{previous_state.wifi_ssid}'"
+                        f" previous_pwd_len={len(previous_state.wifi_pwd)}"
+                    )
             except (ValueError, OSError) as exc:
                 if self.emit_logs:
                     field_name = PARAM_FLAG_TO_FIELD.get(param_bit, f"0x{param_bit:02X}")

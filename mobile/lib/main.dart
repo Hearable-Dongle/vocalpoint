@@ -1242,6 +1242,9 @@ class _VocalPointShellState extends State<VocalPointShell> {
 
     AppState.wifiSsid.value = trimmedSsid;
     AppState.wifiPassword.value = trimmedPassword;
+    debugPrint(
+      '[wifi] sending WIFI_SSID=$trimmedSsid WIFI_PWD(len=${trimmedPassword.length})',
+    );
     await _writeMetadataToken('WIFI_SSID=$trimmedSsid', showSuccess: false);
     await _writeMetadataToken('WIFI_PWD=$trimmedPassword', showSuccess: false);
 
