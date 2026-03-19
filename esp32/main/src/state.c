@@ -479,7 +479,7 @@ void vp_state_init(void)
     (void)set_wifi_pwd_locked("");
     (void)register_voice_profile_name_locked("");
     commit_state_update_locked(VP_FLAG_VOL | VP_FLAG_VOICE_PROFILE_NUM |
-                               VP_FLAG_AUDIO_OUT_NAME | VP_FLAG_WIFI_SSID | VP_FLAG_WIFI_PWD);
+                               VP_FLAG_AUDIO_OUT_NAME);
 #endif
 
     unlock_state();

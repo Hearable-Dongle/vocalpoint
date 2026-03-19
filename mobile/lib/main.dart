@@ -1236,27 +1236,27 @@ class _VocalPointShellState extends State<VocalPointShell> {
     }
 
     final trimmedSsid = ssid.trim();
-    final rawPassword = password;
+    final trimmedPassword = password.trim();
 
     if (trimmedSsid.isEmpty) {
       _showToast('Enter a Wi-Fi network name');
       return false;
     }
 
-    if (rawPassword.isEmpty) {
+    if (trimmedPassword.isEmpty) {
       _showToast('Enter a Wi-Fi password');
       return false;
     }
 
     AppState.wifiSsid.value = trimmedSsid;
-    AppState.wifiPassword.value = rawPassword;
+    AppState.wifiPassword.value = trimmedPassword;
     debugPrint(
-      '[wifi] sending WIFI_SSID=$trimmedSsid WIFI_PWD(len=${rawPassword.length})',
+      '[wifi] sending WIFI_SSID=$trimmedSsid WIFI_PWD(len=${trimmedPassword.length})',
     );
-    await _writeMetadataToken('WIFI_SSID=$trimmedSsid', showSuccess: false);
-    await Future<void>.delayed(const Duration(milliseconds: 200));
-    await _debugReadbackWifiMetadata();
-    await _writeMetadataToken('WIFI_PWD=$trimmedPassword', showSuccess: false);
+    await _writeMetadataToken(
+      'WIFI_SSID=$trimmedSsid;WIFI_PWD=$trimmedPassword',
+      showSuccess: false,
+    );
     await Future<void>.delayed(const Duration(milliseconds: 200));
     await _debugReadbackWifiMetadata();
 
