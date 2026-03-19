@@ -9,36 +9,44 @@ from wifi import WifiManager
 
 
 def _normalized_wifi_request(i2c: I2C_Interface) -> tuple[str, str]:
-    return (i2c.get_wifi_ssid().strip(), i2c.get_wifi_pwd().strip())
+    return (i2c.get_wifi_ssid().strip(), i2c.get_wifi_pwd())
 
 
 def _handle_wifi_updates(
     i2c: I2C_Interface,
     wifi: WifiManager,
     logger,
-    last_wifi_request: tuple[str, str],
-) -> tuple[str, str]:
+    last_seen_wifi_request: tuple[str, str],
+    last_applied_wifi_request: tuple[str, str],
+) -> tuple[tuple[str, str], tuple[str, str]]:
     current_wifi_request = _normalized_wifi_request(i2c)
-    if current_wifi_request == last_wifi_request:
-        return last_wifi_request
-
     wifi_ssid, wifi_pwd = current_wifi_request
-    print(
-        f"[main] wifi request changed:"
-        f" ssid='{wifi_ssid}' password_len={len(wifi_pwd)}"
-    )
-    print(f"[main] raw i2c wifi state: {i2c.get_state()}")
-    logger.info(
-        f"Wi-Fi request changed: ssid='{wifi_ssid}' password_len={len(wifi_pwd)}"
-    )
-    if wifi_ssid and wifi_pwd:
-        result = wifi.connect_from_i2c(wifi_ssid, wifi_pwd)
-        logger.info(result)
-        print(result)
-    else:
-        print("[main] wifi request incomplete, waiting for both SSID and password")
 
-    return current_wifi_request
+    if current_wifi_request != last_seen_wifi_request:
+        print(
+            f"[main] wifi request changed:"
+            f" ssid='{wifi_ssid}' password_len={len(wifi_pwd)}"
+        )
+        logger.info(
+            f"Wi-Fi request changed: ssid='{wifi_ssid}' password_len={len(wifi_pwd)}"
+        )
+
+    if not wifi_ssid or not wifi_pwd:
+        if current_wifi_request != last_seen_wifi_request:
+            print("[main] wifi request incomplete, waiting for both SSID and password")
+        return current_wifi_request, last_applied_wifi_request
+
+    if current_wifi_request == last_applied_wifi_request:
+        return current_wifi_request, last_applied_wifi_request
+
+    result = wifi.connect_from_i2c(wifi_ssid, wifi_pwd)
+    logger.info(result)
+    print(result)
+
+    if result.startswith("Connected to "):
+        return current_wifi_request, current_wifi_request
+
+    return current_wifi_request, last_applied_wifi_request
 
 
 def main() -> int:
@@ -49,32 +57,26 @@ def main() -> int:
     i2c = I2C_Interface(
         autostart=True,
         enable_voice_test=False,
+        emit_logs=True,
     )
     print(f"[main] initial i2c state: {i2c.get_state()}")
 
-    last_wifi_request = ("", "")
+    last_seen_wifi_request = ("", "")
+    last_applied_wifi_request = ("", "")
 
-    assert bt.power_off()
-    assert bt.power_on()
-    assert bt.agent_on()
+    # assert bt.power_off()
+    # assert bt.power_on()
+    # assert bt.agent_on()
 
     while True:
         try:
-            last_wifi_request = _handle_wifi_updates(
+            last_seen_wifi_request, last_applied_wifi_request = _handle_wifi_updates(
                 i2c,
                 wifi,
                 cfg.logger,
-                last_wifi_request,
+                last_seen_wifi_request,
+                last_applied_wifi_request,
             )
-
-            while True:
-                time.sleep(1)
-                last_wifi_request = _handle_wifi_updates(
-                    i2c,
-                    wifi,
-                    cfg.logger,
-                    last_wifi_request,
-                )
 
             devices = bt.scan(duration=15)
 
@@ -84,20 +86,22 @@ def main() -> int:
                     i2c.write_audio_out_name(device)
                     print(f"Found device: {device}")
                     time.sleep(0.3)
-                    last_wifi_request = _handle_wifi_updates(
+                    last_seen_wifi_request, last_applied_wifi_request = _handle_wifi_updates(
                         i2c,
                         wifi,
                         cfg.logger,
-                        last_wifi_request,
+                        last_seen_wifi_request,
+                        last_applied_wifi_request,
                     )
 
             while i2c.get_audio_out_name() == "":
                 time.sleep(0.3)
-                last_wifi_request = _handle_wifi_updates(
+                last_seen_wifi_request, last_applied_wifi_request = _handle_wifi_updates(
                     i2c,
                     wifi,
                     cfg.logger,
-                    last_wifi_request,
+                    last_seen_wifi_request,
+                    last_applied_wifi_request,
                 )
 
             device_name = i2c.get_audio_out_name()

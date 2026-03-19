@@ -1,9 +1,22 @@
 import subprocess
 import textwrap
+import unicodedata
 from typing import List
 
 
 class WifiManager:
+    _SSID_PUNCT_TRANSLATION = str.maketrans(
+        {
+            "\u2018": "'",
+            "\u2019": "'",
+            "\u201C": '"',
+            "\u201D": '"',
+            "\u2013": "-",
+            "\u2014": "-",
+            "\u00A0": " ",
+        }
+    )
+
     def __init__(self, logger, ifname: str = "wlan0") -> None:
         self.__logger = logger
         self.ifname = ifname
@@ -11,6 +24,26 @@ class WifiManager:
 
     def __strip_text(self, text: str) -> str:
         return text.strip() if text else ""
+
+    def __ssid_lookup_key(self, ssid: str) -> str:
+        normalized = unicodedata.normalize("NFKC", self.__strip_text(ssid))
+        normalized = normalized.translate(self._SSID_PUNCT_TRANSLATION)
+        return normalized.casefold()
+
+    def __resolve_scanned_ssid(
+        self,
+        requested_ssid: str,
+        available_networks: List[str],
+    ) -> str | None:
+        requested_ssid = self.__strip_text(requested_ssid)
+        if requested_ssid in available_networks:
+            return requested_ssid
+
+        requested_key = self.__ssid_lookup_key(requested_ssid)
+        for network in available_networks:
+            if self.__ssid_lookup_key(network) == requested_key:
+                return network
+        return None
 
     def __log_failure(
         self,
@@ -95,37 +128,62 @@ class WifiManager:
         return networks
 
     def connect_from_i2c(self, ssid: str, password: str) -> str:
-        ssid = ssid.strip()
-        password = password.strip()
+        requested_ssid = ssid.strip()
+        password = password
 
-        self.__logger.info(f"Received Wi-Fi connect request for SSID '{ssid}'")
-        print(f"[wifi] received connect request for SSID '{ssid}'")
+        self.__logger.info(f"Received Wi-Fi connect request for SSID '{requested_ssid}'")
+        print(f"[wifi] received connect request for SSID '{requested_ssid}'")
 
-        if not ssid:
+        if not requested_ssid:
             self.__log_failure(
                 "connect_from_i2c.validate_ssid",
                 error="Missing SSID from I2C input",
             )
             return "Error: username/network name is wrong"
 
-        available_networks = self.scan_networks()
-
-        if ssid not in available_networks:
+        if password == "":
             self.__log_failure(
-                "connect_from_i2c.network_lookup",
-                ssid=ssid,
-                error="Requested SSID not found in scanned networks",
+                "connect_from_i2c.validate_password",
+                ssid=requested_ssid,
+                error="Missing password from I2C input",
             )
-            return "Error: username/network name is wrong"
+            return "Error: password is wrong"
 
-        print(f"[wifi] target SSID '{ssid}' found, attempting nmcli connect")
+        current = self.current_wifi()
+        if current == requested_ssid:
+            self.__logger.info(f"Already connected to Wi-Fi network '{requested_ssid}'")
+            print(f"[wifi] already connected to '{requested_ssid}'")
+            return f"Connected to {requested_ssid}"
+
+        available_networks = self.scan_networks()
+        target_ssid = self.__resolve_scanned_ssid(requested_ssid, available_networks)
+        if not isinstance(target_ssid, str) or not target_ssid:
+            print(
+                f"[wifi] requested SSID '{requested_ssid}' was not found in scanned"
+                " networks, attempting direct nmcli connect anyway"
+            )
+            self.__logger.info(
+                f"SSID '{requested_ssid}' not found in scan results, attempting direct connect"
+            )
+            target_ssid = requested_ssid
+
+        if target_ssid != requested_ssid:
+            print(
+                f"[wifi] matched requested SSID '{requested_ssid}'"
+                f" to scanned SSID '{target_ssid}'"
+            )
+            self.__logger.info(
+                f"Matched requested SSID '{requested_ssid}' to scanned SSID '{target_ssid}'"
+            )
+
+        print(f"[wifi] target SSID '{target_ssid}' found, attempting nmcli connect")
         result = self.run(
             [
                 "nmcli",
                 "device",
                 "wifi",
                 "connect",
-                ssid,
+                target_ssid,
                 "password",
                 password,
                 "ifname",
@@ -142,17 +200,22 @@ class WifiManager:
         if result.returncode != 0:
             self.__log_failure(
                 "connect_from_i2c.connect",
-                ssid=ssid,
+                ssid=target_ssid,
                 output=result.stdout,
                 error=result.stderr,
             )
-            return "Error: password is wrong"
+            combined_output = f"{result.stdout}\n{result.stderr}".lower()
+            if "no network with ssid" in combined_output:
+                return "Error: username/network name is wrong"
+            if "password" in combined_output:
+                return "Error: password is wrong"
+            return "Error: failed to connect to network"
 
-        self.__logger.info(f"Connected to Wi-Fi network '{ssid}' on {self.ifname}")
-        print(f"[wifi] connected to '{ssid}' on {self.ifname}")
+        self.__logger.info(f"Connected to Wi-Fi network '{target_ssid}' on {self.ifname}")
+        print(f"[wifi] connected to '{target_ssid}' on {self.ifname}")
         current = self.current_wifi()
         print(f"[wifi] current active network after connect: '{current}'")
-        return f"Connected to {ssid}"
+        return f"Connected to {target_ssid}"
 
     def current_wifi(self) -> str:
         try:
