@@ -26,32 +26,49 @@ def main() -> int:
     assert bt.agent_on()
 
     while(True):
-        # Scan for devices and connect to configured sink
-        devices = bt.scan(duration = 15) # 15 seconds was found to be the minimum time required
+        try:
+            # Scan for devices and connect to configured sink
+            devices = bt.scan(duration = 15) # 15 seconds was found to be the minimum time required
 
-        for device in devices.values():
-            i2c.write_audio_out_name(device)
-            time.sleep(0.3)
+            write_device_count = 3
 
-        while i2c.get_audio_out_name() == "":
-            time.sleep(0.3)
+            for count in range(write_device_count):
+                for device in devices.values():
+                    i2c.write_audio_out_name(device)
+                    print(f"Found device: {device}")
+                    time.sleep(0.3)
+                count += 1
 
-        device_name = i2c.get_audio_out_name()
+            while i2c.get_audio_out_name() == "":
+                time.sleep(0.3)
 
-        address = next(
-            (addr for addr, name in devices.items() if name == device_name),
-            None,
-        )
+            device_name = i2c.get_audio_out_name()
 
-        if address is None:
-            raise ValueError(f"No address found for device {device_name}")
+            print(f"Device name from app: {device_name}")
 
-        assert bt.pair(address)
-        assert bt.trust(address)
-        assert bt.connect(address)
+            address = next(
+                (addr for addr, name in devices.items() if name == device_name),
+                None,
+            )
+
+            if address is None:
+                raise ValueError(f"No address found for device {device_name}")
+
+            print(f"Attempting to connect to {device_name}, with address {address}")
+
+            assert bt.pair(address)
+            assert bt.trust(address)
+            assert bt.connect(address)
+
+            print(f"Connected to {device_name} with address {address}")
+
+            while(True):
+                time.sleep(1)
+
+        except KeyboardInterrupt:
+            return 0
 
     # assert cfg.sink in devices
-
 
     # Print Bluetooth sink information
     print(bt.info(cfg.sink))
