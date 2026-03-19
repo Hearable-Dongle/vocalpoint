@@ -1829,7 +1829,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
                         onPressed: isVocalPoint
                             ? _disconnectVocalPoint
                             : () async => _clearOutputSelection(),
-                        child: Text(isVocalPoint ? 'Disconnect' : 'Clear'),
+                        child: Text(isVocalPoint ? 'Disconnect' : 'Disconnect'),
                       ),
                   ],
                 );

@@ -351,6 +351,18 @@ class I2C_Interface:
     def get_audio_out_forget_name(self) -> str:
         return self.get_state().audio_out_forget_name
 
+    def take_audio_out_disconnect_name(self) -> str:
+        with self._state_lock:
+            name = self.state.audio_out_disconnect_name
+            self.state.audio_out_disconnect_name = ""
+        return name
+
+    def take_audio_out_forget_name(self) -> str:
+        with self._state_lock:
+            name = self.state.audio_out_forget_name
+            self.state.audio_out_forget_name = ""
+        return name
+
     def write_voice_profile_name(self, voice_name: str) -> None:
         assert self._bus is not None
         write_voice_profile_name(self._bus, self.address, voice_name)

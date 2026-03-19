@@ -280,12 +280,12 @@ static int set_wifi_pwd_locked(const char *value)
     return 1;
 }
 
-static int set_audio_out_disconnect_name_locked(const char *value)
+static int queue_audio_out_disconnect_name_locked(const char *value)
 {
     char next[VP_PARAM_MAX_LEN];
 
     copy_string(next, sizeof(next), value);
-    if (strings_equal(s_state.audio_out_disconnect_name, next)) {
+    if (next[0] == '\0') {
         return 0;
     }
 
@@ -293,12 +293,12 @@ static int set_audio_out_disconnect_name_locked(const char *value)
     return 1;
 }
 
-static int set_audio_out_forget_name_locked(const char *value)
+static int queue_audio_out_forget_name_locked(const char *value)
 {
     char next[VP_PARAM_MAX_LEN];
 
     copy_string(next, sizeof(next), value);
-    if (strings_equal(s_state.audio_out_forget_name, next)) {
+    if (next[0] == '\0') {
         return 0;
     }
 
@@ -467,7 +467,7 @@ static int parse_and_apply_token_locked(char *token, uint32_t *dirty_mask)
     }
 
     if (key_equals(key, "AUDIO_OUT_DISCONNECT")) {
-        if (set_audio_out_disconnect_name_locked(value)) {
+        if (queue_audio_out_disconnect_name_locked(value)) {
             *dirty_mask |= VP_FLAG_AUDIO_OUT_DISCONNECT;
             return 1;
         }
@@ -475,7 +475,7 @@ static int parse_and_apply_token_locked(char *token, uint32_t *dirty_mask)
     }
 
     if (key_equals(key, "AUDIO_OUT_FORGET")) {
-        if (set_audio_out_forget_name_locked(value)) {
+        if (queue_audio_out_forget_name_locked(value)) {
             *dirty_mask |= VP_FLAG_AUDIO_OUT_FORGET;
             return 1;
         }
@@ -520,8 +520,8 @@ void vp_state_init(void)
     (void)set_audio_out_name_set_locked("Test Output");
     (void)set_wifi_ssid_locked("Test SSID");
     (void)set_wifi_pwd_locked("Test Password");
-    (void)set_audio_out_disconnect_name_locked("");
-    (void)set_audio_out_forget_name_locked("");
+    (void)queue_audio_out_disconnect_name_locked("");
+    (void)queue_audio_out_forget_name_locked("");
     (void)register_voice_profile_name_locked("Test Voice");
     commit_state_update_locked(VP_FLAG_VOL | VP_FLAG_VOICE_PROFILE_NUM |
                                VP_FLAG_AUDIO_OUT_NAME | VP_FLAG_WIFI_SSID | VP_FLAG_WIFI_PWD);
@@ -533,8 +533,8 @@ void vp_state_init(void)
     (void)set_audio_out_name_set_locked("");
     (void)set_wifi_ssid_locked("");
     (void)set_wifi_pwd_locked("");
-    (void)set_audio_out_disconnect_name_locked("");
-    (void)set_audio_out_forget_name_locked("");
+    (void)queue_audio_out_disconnect_name_locked("");
+    (void)queue_audio_out_forget_name_locked("");
     (void)register_voice_profile_name_locked("");
     commit_state_update_locked(VP_FLAG_VOL | VP_FLAG_VOICE_PROFILE_NUM |
                                VP_FLAG_AUDIO_OUT_NAME | VP_FLAG_WIFI_SSID | VP_FLAG_WIFI_PWD);
@@ -743,8 +743,8 @@ void vp_state_testing_tick(void)
     (void)set_audio_out_name_set_locked(audio_out_name);
     (void)set_wifi_ssid_locked(wifi_ssid);
     (void)set_wifi_pwd_locked("TestPassword");
-    (void)set_audio_out_disconnect_name_locked("");
-    (void)set_audio_out_forget_name_locked("");
+    (void)queue_audio_out_disconnect_name_locked("");
+    (void)queue_audio_out_forget_name_locked("");
     (void)register_voice_profile_name_locked(voice_name);
 
     tick_count++;
