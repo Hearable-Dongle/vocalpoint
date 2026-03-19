@@ -12,6 +12,9 @@ class USB_Interface:
     Interface for capturing audio from USB device using PyAudio.
     """
 
+    # Define threshold for marking hardfault conditions based on consecutive read failures
+    __FAILURE_THRESHOLD = 5
+
     def __init__(
         self,
         logger: logging.Logger,
@@ -47,6 +50,10 @@ class USB_Interface:
         self.__audio: Optional[pyaudio.PyAudio] = None
         self.__device_index: Optional[int] = None
         self.__channels: int = 0
+
+        # Define hardfault flag and error tracking
+        self.__hardfault = False
+        self.__consecutive_failures: int = 0
 
     def __get_device_index(self) -> Optional[int]:
         """
@@ -123,6 +130,19 @@ class USB_Interface:
             
             # Get device index for the configured source
             self.__device_index = self.__get_device_index()
+
+            # Check if device was found
+            if self.__device_index is None:
+
+                # Mark as hardfault since USB device is unavailable
+                self.__hardfault = True
+
+                # Log hardfault condition with context about missing device at initialization
+                self.__logger.error("USB interface hardfault")
+                
+                # 
+                self.disconnect()
+                return False
 
             # Parse device info
             device_info = self.__audio.get_device_info_by_index(self.__device_index)
@@ -243,12 +263,6 @@ class USB_Interface:
         -------
         Optional[bytes]
             Audio frame as bytes (int16 format), or None if error occurs
-            
-        Notes
-        -----
-        Handles PyAudio version compatibility and stream errors gracefully.
-        Input overflows and closed streams return None without raising exceptions,
-        allowing the stream to recover on subsequent calls.
         """
 
         # Set return value to None by default
@@ -264,25 +278,62 @@ class USB_Interface:
             try:
                 # Read a frame of audio data from the stream
                 data = self.__stream.read(self.__frame_size, exception_on_overflow=False)
+
+                # Reset failure counter on successful read
+                self.__consecutive_failures = 0
             
             # Catch OSError which may occur during stream read attempts
             except OSError as e:
+                # Increment consecutive failure counter
+                self.__consecutive_failures += 1
+                
                 # Check for common stream errors like input overflow or stream closure
-                if "Input overflowed" in str(e) or "Stream closed" in str(e):
-                    # Log warning for recoverable stream errors without flooding logs
-                    self.__logger.debug(f"USB stream read warning: {str(e)}")
-
+                if "Input overflowed" in str(e):
+                    # Input overflow is recoverable - log at debug level
+                    self.__logger.debug(f"USB stream read warning: Input overflow")
                     # Return empty data to allow stream to recover on next read attempt
                     data = {}
 
+                elif "Stream closed" in str(e):
+                    # Stream closed indicates device was disconnected or forcibly closed
+                    self.__logger.warning(f"USB stream read warning: Stream closed")
+                    
+                    # Check pattern of consecutive failures
+                    if self.__consecutive_failures >= self.__FAILURE_THRESHOLD:
+                        # Mark as hardfault if multiple stream closures occur
+                        self.__hardfault = True
+
+                        # Log hardfault condition with context about the stream closure pattern
+                        self.__logger.error("USB interface hardfault")
+
                 else:
-                    # Log other types of OSError that may indicate more serious issues
+                    # Other OSErrors may indicate hardware-level failures
                     self.__logger.error(f"Error reading audio from USB: {str(e)}")
+
+                    # Check pattern of consecutive failures
+                    if self.__consecutive_failures >= self.__FAILURE_THRESHOLD:
+                        # Mark as hardfault if multiple read errors occur
+                        self.__hardfault = True
+
+                        # Log hardfault condition with context about the read error pattern
+                        self.__logger.error(f"USB interface hardfault")
 
             # Catch any other exceptions that may occur during the read attempt
             except Exception as e:
+
+                # Increment consecutive failure counter for unexpected exceptions
+                self.__consecutive_failures += 1
+
                 # Log unexpected errors during audio read attempts
                 self.__logger.error(f"Error reading audio from USB: {str(e)}")
+
+                # Check pattern of consecutive failures
+                if self.__consecutive_failures >= self.__FAILURE_THRESHOLD:
+                    # Mark as hardfault if multiple unexpected errors occur
+                    self.__hardfault = True
+
+                    # Log hardfault condition with context about the unexpected error pattern
+                    self.__logger.error(f"USB interface hardfault")
 
         # Return the audio data or None when errors occur
         return data
@@ -304,3 +355,21 @@ class USB_Interface:
 
         # Return the number of channels detected on the USB device
         return self.__channels
+
+    @property
+    def hardfault(self) -> bool:
+        """
+        Get the hardfault status of the USB interface.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        bool
+            True if a hardfault condition has been detected, False otherwise
+        """
+
+        # Return the current hardfault status
+        return self.__hardfault
