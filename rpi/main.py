@@ -83,9 +83,11 @@ def _handle_output_device_actions(i2c: I2C_Interface, bt: BT_Interface, logger, 
 
 def _send_output_devices(i2c: I2C_Interface, devices: dict[str, str]) -> None:
     for device_name in devices.values():
-        i2c.write_audio_out_name(device_name)
-        print(f"Found device: {device_name}")
-        time.sleep(0.3)
+        for count in range(3):
+            i2c.write_audio_out_name(device_name)
+            print(f"Found device: {device_name}")
+            time.sleep(0.3)
+            count += 1
 
 def _scan_and_cache(bt: BT_Interface, cached_devices: dict[str, str], duration: int = BLE_SCAN_SEC) -> dict[str, str]:
     scanned_devices = bt.scan(duration=duration)
@@ -99,9 +101,6 @@ def _connect_selected_output(bt: BT_Interface, logger, cached_devices: dict[str,
         print(f"No address found for selected device: {device_name}")
         logger.warning(f"No address found for selected device '{device_name}'")
         return False
-
-    print(f"Attempting to connect to {device_name}, with address {address}")
-    logger.info(f"Attempting to connect to '{device_name}' at {address}")
 
     if not bt.pair(address):
         return False
@@ -161,8 +160,8 @@ def main() -> int:
                         next_connect_attempt_at = time.monotonic() + CONNECT_RETRY_COOLDOWN_SEC
 
             now = time.monotonic()
-
-            if now - last_announced_at >= SCAN_INTERVAL_SEC:
+            should_scan_for_outputs = (not selected_name) or (not last_selected_name)
+            if should_scan_for_outputs and now - last_announced_at >= SCAN_INTERVAL_SEC:
                 _scan_and_cache(bt, cached_devices, duration=BLE_SCAN_SEC)
 
                 if cached_devices:
