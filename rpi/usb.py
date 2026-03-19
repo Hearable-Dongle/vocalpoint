@@ -23,7 +23,7 @@ class USB_Interface:
         frame_size: int
     ) -> None:
         """
-        Initialize USB audio interface.
+        Initialize USB interface.
         
         Parameters
         ----------
@@ -257,7 +257,7 @@ class USB_Interface:
             # Return the result of the disconnection attempt
             return ret_code
 
-    def get_audio(self) -> Optional[bytes]:
+    def read_audio(self) -> Optional[bytes]:
         """
         Read one frame of audio from USB device.
 
@@ -297,8 +297,6 @@ class USB_Interface:
                 if "Input overflowed" in str(e):
                     # Input overflow is recoverable - log at debug level
                     self.__logger.debug(f"USB stream read warning: Input overflow")
-                    # Return empty data to allow stream to recover on next read attempt
-                    data = {}
 
                 elif "Stream closed" in str(e):
                     # Stream closed indicates device was disconnected or forcibly closed
