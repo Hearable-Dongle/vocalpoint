@@ -4,8 +4,11 @@ import dbus.service
 import textwrap
 import re
 import time
+import logging
+import subprocess
 from pathlib import Path
 from dbus.mainloop.glib import DBusGMainLoop, threads_init
+
 
 # D-Bus object paths
 BLUEZ_SERVICE = 'org.bluez'
@@ -14,9 +17,12 @@ DEVICE_PREFIX = '/org/bluez/hci0/dev_'
 
 class BT_Interface:
 
-    def __init__(self, logger) -> None:
+    def __init__(self, logger: logging.Logger) -> None:
         # Store logger instance
         self.__logger = logger
+        self.__pulseaudio_sink = None
+        self.__paplay_process = None
+        self.__connected_mac = None
         
         # Initialize D-Bus
         DBusGMainLoop(set_as_default=True)
@@ -233,12 +239,50 @@ class BT_Interface:
             self.__log_failure("untrust", device=mac, error=str(e))
             return False
     
-    def connect(self, mac: str) -> bool:
-        """Connect to a Bluetooth device"""
+    def connect(self, mac: str, fs: int) -> bool:
+        """Connect to a Bluetooth device and set up audio routing"""
         try:
+            if self.__connected_mac == mac:
+                self.__logger.info(f"Already connected to {mac}")
+                return True
+
+            if self.__connected_mac is not None:
+                self.__logger.warning(f"Already connected to {self.__connected_mac}")
+                return False
+
             device = self.__get_device(mac)
             device.Connect(timeout=30000)  # 30 second timeout for connection
-            self.__logger.info(f"Connected to {mac}")
+            
+            # Find the PulseAudio sink for this device
+            sink_name = self.__get_pulseaudio_sink(mac)
+            if not sink_name:
+                self.__logger.error(f"No PulseAudio sink found for {mac}")
+                return False
+            
+            # Start persistent paplay process for audio streaming
+            try:
+                self.__paplay_process = subprocess.Popen(
+                    [
+                        'paplay',
+                        '--device', sink_name,
+                        '--format', 's16le',
+                        '--rate', str(fs),
+                        '--channels', '1',
+                        '--raw'
+                    ],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE
+                )
+                self.__logger.info(f"Started paplay process for {sink_name}")
+            except FileNotFoundError:
+                self.__logger.error("paplay command not found. Install pulseaudio-utils.")
+                return False
+            
+            self.__pulseaudio_sink = sink_name
+            self.__connected_mac = mac
+            
+            self.__logger.info(f"Connected to {mac} with PulseAudio sink {sink_name}")
             return True
             
         except dbus.exceptions.DBusException as e:
@@ -247,10 +291,33 @@ class BT_Interface:
                 return True
             self.__log_failure("connect", device=mac, error=str(e))
             return False
+        except Exception as e:
+            self.__logger.error(f"Error setting up audio routing: {str(e)}")
+            return False
     
     def disconnect(self, mac: str) -> bool:
-        """Disconnect from a Bluetooth device"""
+        """Disconnect from a Bluetooth device and close audio routing"""
         try:
+            # Close paplay process if running
+            if self.__paplay_process is not None:
+                try:
+                    self.__paplay_process.stdin.close()
+                    self.__paplay_process.wait(timeout=2)
+                    self.__logger.info("Closed paplay process")
+                except Exception as e:
+                    self.__logger.warning(f"Error closing paplay process: {str(e)}")
+                    try:
+                        self.__paplay_process.terminate()
+                    except:
+                        pass
+                finally:
+                    self.__paplay_process = None
+            
+            # Clean up audio routing variables
+            if self.__pulseaudio_sink is not None:
+                self.__pulseaudio_sink = None
+                self.__connected_mac = None
+            
             device = self.__get_device(mac)
             device.Disconnect()
             self.__logger.info(f"Disconnected from {mac}")
@@ -263,7 +330,7 @@ class BT_Interface:
             self.__log_failure("disconnect", device=mac, error=str(e))
             return False
     
-    def info(self, mac: str) -> str:
+    def info(self, mac: str) -> dict:
         """Get device information"""
         try:
             device_props = dbus.Interface(
@@ -274,17 +341,12 @@ class BT_Interface:
             # Get all properties
             all_props = device_props.GetAll(BLUEZ_SERVICE + '.Device1')
             
-            # Format the output
-            info_str = f"Device {mac}\n"
-            for key, value in all_props.items():
-                info_str += f"\t{key}: {value}\n"
-            
             self.__logger.info(f"Retrieved info for {mac}")
-            return info_str
+            return dict(all_props)
             
         except dbus.exceptions.DBusException as e:
             self.__log_failure("info", device=mac, error=str(e))
-            return ""
+            return {}
     
     def devices(self, audio_sink: bool = True) -> dict:
         """Get list of paired audio sink devices"""
@@ -383,3 +445,99 @@ class BT_Interface:
         except dbus.exceptions.DBusException as e:
             self.__log_failure("scan", error=str(e))
             return {}
+    
+    def write_audio(self, audio_bytes: bytes) -> bool:
+        """
+        Write raw audio bytes to the connected Bluetooth A2DP device using PulseAudio.
+        
+        Device must be connected via connect() first. Uses persistent paplay process
+        for low-latency continuous audio streaming to Bluetooth devices.
+        
+        Args:
+            audio_bytes: Raw audio data (int16 PCM format, 16kHz, mono)
+            
+        Returns:
+            True if audio was written successfully, False otherwise
+        """
+        try:
+            # Check if device is connected and paplay is running
+            if self.__paplay_process is None or self.__connected_mac is None:
+                self.__logger.error("No device connected. Call connect() first.")
+                return False
+            
+            # Check if process is still alive
+            if self.__paplay_process.poll() is not None:
+                self.__logger.error("paplay process terminated unexpectedly")
+                self.__paplay_process = None
+                return False
+            
+            try:
+                # Write audio data to paplay's stdin
+                self.__paplay_process.stdin.write(audio_bytes)
+                self.__paplay_process.stdin.flush()
+                return True
+                
+            except BrokenPipeError:
+                self.__logger.error("paplay pipe broken (device may have disconnected)")
+                self.__paplay_process = None
+                return False
+                
+        except Exception as e:
+            self.__logger.error(f"Error writing audio to PulseAudio: {str(e)}")
+            return False
+    
+    def __get_pulseaudio_sink(self, mac: str) -> str:
+        """
+        Get the PulseAudio sink name for a Bluetooth device MAC address.
+        
+        Uses pactl to query available Bluetooth sinks and find the one matching the MAC.
+        
+        Args:
+            mac: Bluetooth device MAC address
+            
+        Returns:
+            PulseAudio sink name if found, None otherwise
+        """
+        try:
+            # Use pactl to list sinks
+            result = subprocess.run(
+                ['pactl', 'list', 'sinks'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if result.returncode != 0:
+                self.__logger.error(f"pactl error: {result.stderr}")
+                return None
+            
+            # Normalize MAC address to match PulseAudio format (with underscores)
+            mac_normalized = mac.replace(':', '_')
+            
+            # Parse pactl output to find Bluetooth sink
+            # Look for lines with sink names that contain the MAC address
+            for line in result.stdout.split('\n'):
+                line = line.strip()
+                
+                # Look for Name field in sink properties
+                if line.startswith('Name:'):
+                    # Extract the sink name
+                    sink_name = line.split('Name:', 1)[1].strip()
+                    
+                    # Check if this is a Bluetooth sink with our MAC address
+                    if 'bluez' in sink_name.lower() and mac_normalized in sink_name:
+                        self.__logger.info(f"Found PulseAudio sink: {sink_name}")
+                        return sink_name
+            
+            self.__logger.warning(f"No PulseAudio sink found for {mac}. Available sinks:\n{result.stdout}")
+            return None
+            
+        except FileNotFoundError:
+            self.__logger.error("pactl command not found. Install pulseaudio-utils.")
+            return None
+        except subprocess.TimeoutExpired:
+            self.__logger.error("pactl command timed out")
+            return None
+        except Exception as e:
+            self.__logger.error(f"Error querying PulseAudio sinks: {str(e)}")
+            return None
