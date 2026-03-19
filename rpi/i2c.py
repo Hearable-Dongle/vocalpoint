@@ -146,6 +146,18 @@ class DeviceState:
     audio_out_disconnect_name: str = ""
     audio_out_forget_name: str = ""
 
+def _change_volume(new_volume: int) -> None:
+    volume = max(0, min(100, int(new_volume)))
+    try:
+        subprocess.run(
+            ["amixer", "set", "Master", f"{volume}%"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        print(f"Failed to set volume: {exc.stderr or exc}")
+
 def _write_request(bus: SMBus, address: int, flags: int) -> None:
     data = bytes([VP_REQ_MAILBOX_OFFSET]) + struct.pack("<I", flags)
     bus.i2c_rdwr(i2c_msg.write(address, data))
@@ -420,9 +432,13 @@ class I2C_Interface:
                 continue
 
             try:
+                previous_volume = self.get_state().volume
                 raw = read_param(self._bus, self.address, param_bit)
                 with self._state_lock:
                     apply_param(self.state, param_bit, raw)
+                    new_volume = self.state.volume
+                if param_bit == VP_FLAG_VOL and new_volume != previous_volume:
+                    _change_volume(new_volume)
                 self._pending_dirty &= ~param_bit
                 changed = True
             except (ValueError, OSError) as exc:
