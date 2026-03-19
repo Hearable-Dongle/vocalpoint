@@ -9,7 +9,7 @@ class Session_Config():
 
     # Private configuration variables
     __sink: str = "BC:87:FA:57:47:0E"
-    __source: str = "ReSpeaker"
+    __source: str = "RESPEAKER"
     __frame: int = 160
     __fs: int = 16000
     __deps: list[str] = [
@@ -23,6 +23,9 @@ class Session_Config():
         "dbus",
         "pyaudio",
         "numpy",
+        "scipy",
+        "pydantic",
+        "pyrnnoise"
     ]
 
     def __init__(self) -> None:

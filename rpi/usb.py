@@ -39,7 +39,7 @@ class USB_Interface:
             device_name = info['name']
             
             # Match against source name (handle both ALSA and PulseAudio names)
-            if self.__source in device_name or device_name in self.__source:
+            if self.__source in device_name.upper() or device_name.upper() in self.__source:
                 self.__logger.info(f"Found USB device at index {i}: {device_name}")
                 return i
         
