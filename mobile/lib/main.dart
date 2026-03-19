@@ -874,6 +874,14 @@ class _VocalPointShellState extends State<VocalPointShell> {
     );
   }
 
+  Future<void> _debugReadbackWifiMetadata() async {
+    await _refreshMetadataFromDevice(showErrors: false);
+    debugPrint(
+      '[wifi] readback WIFI_SSID=${AppState.wifiSsid.value} '
+      'WIFI_PWD(len=${AppState.wifiPassword.value.length})',
+    );
+  }
+
   Future<void> _writeVolumeToDevice({bool showSuccess = false}) async {
     final volume = AppState.isMuted.value
         ? 0
@@ -1246,7 +1254,11 @@ class _VocalPointShellState extends State<VocalPointShell> {
       '[wifi] sending WIFI_SSID=$trimmedSsid WIFI_PWD(len=${trimmedPassword.length})',
     );
     await _writeMetadataToken('WIFI_SSID=$trimmedSsid', showSuccess: false);
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    await _debugReadbackWifiMetadata();
     await _writeMetadataToken('WIFI_PWD=$trimmedPassword', showSuccess: false);
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    await _debugReadbackWifiMetadata();
 
     if (showSuccess) {
       _showToast('Saved Wi-Fi credentials');

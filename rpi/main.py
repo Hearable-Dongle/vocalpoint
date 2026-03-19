@@ -27,6 +27,7 @@ def _handle_wifi_updates(
         f"[main] wifi request changed:"
         f" ssid='{wifi_ssid}' password_len={len(wifi_pwd)}"
     )
+    print(f"[main] raw i2c wifi state: {i2c.get_state()}")
     logger.info(
         f"Wi-Fi request changed: ssid='{wifi_ssid}' password_len={len(wifi_pwd)}"
     )
