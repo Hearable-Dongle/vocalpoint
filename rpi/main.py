@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
+<<<<<<< Updated upstream
 # Local imports
+=======
+import sys
+import time
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SIGNAL_PROCESSING_ROOT = REPO_ROOT / "signal-processing-research"
+
+for path in (REPO_ROOT, SIGNAL_PROCESSING_ROOT):
+    path_str = str(path)
+    if path_str not in sys.path:
+        sys.path.insert(0, path_str)
+
+>>>>>>> Stashed changes
 from bt import BT_Interface
 from usb import USB_Interface
 from config import Session_Config
