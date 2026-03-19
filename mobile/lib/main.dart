@@ -534,9 +534,16 @@ class _VocalPointShellState extends State<VocalPointShell> {
     _showToast('Forgot ${AppState.connectedDeviceName.value ?? 'device'}');
   }
 
-  void _forgetSelectedOutputDevice() {
+  Future<void> _forgetSelectedOutputDevice() async {
     final deviceId = AppState.bleAddress.value;
-    if (deviceId.isEmpty) return;
+    final deviceName = AppState.audioOutputDeviceName.value?.trim() ?? '';
+    if (deviceId.isEmpty && deviceName.isEmpty) return;
+
+    AppState.clearOutputSelection();
+
+    if (_hasConnectedVocalPoint && deviceName.isNotEmpty) {
+      await _writeMetadataToken('AUDIO_OUT_FORGET=$deviceName', showSuccess: false);
+    }
 
     final current = List<RememberedDevice>.from(
       AppState.rememberedOutputDevices.value,
@@ -546,7 +553,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
       AppState.autoConnectOutputDeviceIds.value,
     )..remove(deviceId);
     AppState.autoConnectOutputDeviceIds.value = autoConnect;
-    _showToast('Forgot ${AppState.audioOutputDeviceName.value ?? 'device'}');
+    _showToast('Forgot ${deviceName.isEmpty ? 'device' : deviceName}');
   }
 
   bool _isConnectedVocalPointAutoConnectEnabled() {
@@ -781,8 +788,12 @@ class _VocalPointShellState extends State<VocalPointShell> {
   }
 
   Future<void> _clearOutputSelection() async {
+    final deviceName = AppState.audioOutputDeviceName.value?.trim() ?? '';
     AppState.clearOutputSelection();
-    _showToast('Cleared output device selection');
+    if (_hasConnectedVocalPoint && deviceName.isNotEmpty) {
+      await _writeMetadataToken('AUDIO_OUT_DISCONNECT=$deviceName', showSuccess: false);
+    }
+    _showToast('Disconnected output device');
   }
 
   Future<void> _selectOutputDeviceName(String name) async {
@@ -1795,7 +1806,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
                       TextButton(
                         onPressed: isVocalPoint
                             ? _forgetConnectedVocalPoint
-                            : _forgetSelectedOutputDevice,
+                            : () async => _forgetSelectedOutputDevice(),
                         child: const Text('Forget this device'),
                       ),
                     if (isReady)
@@ -1818,8 +1829,8 @@ class _VocalPointShellState extends State<VocalPointShell> {
                       TextButton(
                         onPressed: isVocalPoint
                             ? _disconnectVocalPoint
-                            : _clearOutputSelection,
-                        child: Text(isVocalPoint ? 'Disconnect' : 'Clear'),
+                            : () async => _clearOutputSelection(),
+                        child: Text(isVocalPoint ? 'Disconnect' : 'Disconnect'),
                       ),
                   ],
                 );

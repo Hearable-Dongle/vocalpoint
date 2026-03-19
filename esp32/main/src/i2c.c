@@ -88,8 +88,8 @@ static int i2c_req_is_status_request(uint32_t req_flags)
 
 static int i2c_req_is_param_request(uint32_t req_flags)
 {
-    uint32_t param_bits = req_flags & VP_FETCH_PARAM_BITS_MASK;
-    uint32_t unknown_bits = req_flags & ~(VP_REQ_DATA | VP_FETCH_PARAM_BITS_MASK | VP_REQ_OFFSET_MASK);
+    uint32_t param_bits = req_flags & VP_REQ_FETCH_PARAM_BITS_MASK;
+    uint32_t unknown_bits = req_flags & ~(VP_REQ_DATA | VP_REQ_FETCH_PARAM_BITS_MASK | VP_REQ_OFFSET_MASK);
 
     if ((req_flags & VP_REQ_DATA) == 0U) {
         return 0;
@@ -230,6 +230,18 @@ static size_t vp_param_payload_info(uint32_t param_bit,
         return VP_PAYLOAD_WIFI_PWD_LEN;
     }
 
+    if (param_bit == VP_REQ_AUDIO_OUT_DISCONNECT) {
+        *payload = (const uint8_t *)snap->audio_out_disconnect_name;
+        *clear_mask = VP_FLAG_AUDIO_OUT_DISCONNECT;
+        return VP_PAYLOAD_AUDIO_OUT_DISCONNECT_LEN;
+    }
+
+    if (param_bit == VP_REQ_AUDIO_OUT_FORGET) {
+        *payload = (const uint8_t *)snap->audio_out_forget_name;
+        *clear_mask = VP_FLAG_AUDIO_OUT_FORGET;
+        return VP_PAYLOAD_AUDIO_OUT_FORGET_LEN;
+    }
+
     *payload = NULL;
     *clear_mask = 0U;
     return 0U;
@@ -258,7 +270,7 @@ static esp_err_t i2c_handle_reboot_ack(void)
 
 static esp_err_t i2c_render_param_response(uint32_t req_flags, const vp_state_snapshot_t *snap)
 {
-    uint32_t param_bit = req_flags & VP_FETCH_PARAM_BITS_MASK;
+    uint32_t param_bit = req_flags & VP_REQ_FETCH_PARAM_BITS_MASK;
     uint32_t req_offset = vp_req_get_offset(req_flags);
     uint8_t resp[VP_RESP_MAILBOX_LEN];
     const uint8_t *payload = NULL;
