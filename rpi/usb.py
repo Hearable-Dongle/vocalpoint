@@ -12,8 +12,8 @@ class USB_Interface:
     Interface for capturing audio from USB device using PyAudio.
     """
 
-    # Define threshold for marking hardfault conditions based on consecutive read failures
-    __FAILURE_THRESHOLD = 5
+    # Define threshold for marking hardfault conditions based on consecutive operation failures
+    __FAILURE_THRESHOLD: int = 5
 
     def __init__(
         self,
@@ -52,7 +52,7 @@ class USB_Interface:
         self.__channels: int = 0
 
         # Define hardfault flag and error tracking
-        self.__hardfault = False
+        self.__hardfault: bool = False
         self.__consecutive_failures: int = 0
 
     def __get_device_index(self) -> Optional[int]:
@@ -247,7 +247,13 @@ class USB_Interface:
             
             # Log successful disconnection
             self.__logger.info("USB interface disconnected")
+        
+        # Catch any unexpected exceptions during cleanup
+        except Exception as e:
+            # Log unexpected errors during disconnection
+            self.__logger.error(f"Unexpected error during disconnect: {str(e)}")
             
+        finally:
             # Return the result of the disconnection attempt
             return ret_code
 
