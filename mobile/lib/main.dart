@@ -1831,8 +1831,8 @@ class _VocalPointShellState extends State<VocalPointShell> {
                       TextButton(
                         onPressed: isVocalPoint
                             ? _disconnectVocalPoint
-                            : _clearOutputSelection,
-                        child: Text(isVocalPoint ? 'Disconnect' : 'Clear'),
+                            : _disconnectOutputDevice,
+                        child: const Text('Disconnect'),
                       ),
                   ],
                 );
