@@ -38,7 +38,7 @@ class USB_Interface:
         None
         """
 
-        # Initialize parameters
+        # Initialize instance variables
         self.__logger = logger
         self.__source = source
         self.__sample_rate = sample_rate
