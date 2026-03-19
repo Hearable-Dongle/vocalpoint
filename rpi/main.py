@@ -67,6 +67,15 @@ def main() -> int:
                 last_wifi_request,
             )
 
+            while True:
+                time.sleep(1)
+                last_wifi_request = _handle_wifi_updates(
+                    i2c,
+                    wifi,
+                    cfg.logger,
+                    last_wifi_request,
+                )
+
             devices = bt.scan(duration=15)
 
             write_device_count = 3
@@ -109,15 +118,6 @@ def main() -> int:
             assert bt.connect(address)
 
             print(f"Connected to {device_name} with address {address}")
-
-            while True:
-                time.sleep(1)
-                last_wifi_request = _handle_wifi_updates(
-                    i2c,
-                    wifi,
-                    cfg.logger,
-                    last_wifi_request,
-                )
 
         except KeyboardInterrupt:
             i2c.stop()
