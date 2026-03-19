@@ -69,7 +69,7 @@ def main() -> int:
     try:
         consecutive_errors = 0
         while True:
-            audio_frame = usb.read_frame()
+            audio_frame = usb.get_audio()
             if audio_frame is None:
                 consecutive_errors += 1
                 if consecutive_errors > 10:
