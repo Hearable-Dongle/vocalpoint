@@ -780,9 +780,21 @@ class _VocalPointShellState extends State<VocalPointShell> {
     }
   }
 
-  Future<void> _clearOutputSelection() async {
+  Future<void> _disconnectOutputDevice() async {
+    final outputName = AppState.audioOutputDeviceName.value?.trim() ?? '';
+    final address = AppState.bleAddress.value.trim();
+
+    if (_hasConnectedVocalPoint) {
+      if (address.isNotEmpty) {
+        await _writeMetadataToken('BLE_UUID_ADDR=', showSuccess: false);
+      }
+      if (outputName.isNotEmpty || address.isNotEmpty) {
+        await _writeMetadataToken('AUDIO_OUT_NAME=', showSuccess: false);
+      }
+    }
+
     AppState.clearOutputSelection();
-    _showToast('Cleared output device selection');
+    _showToast('Disconnected output device');
   }
 
   Future<void> _selectOutputDeviceName(String name) async {
@@ -875,6 +887,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
 
   Future<void> _syncSelectedOutputToDevice({bool showSuccess = true}) async {
     final outputName = AppState.audioOutputDeviceName.value?.trim() ?? '';
+    final address = AppState.bleAddress.value.trim();
 
     if (outputName.isEmpty) {
       if (showSuccess) {
@@ -883,14 +896,14 @@ class _VocalPointShellState extends State<VocalPointShell> {
       return;
     }
 
-    if (AppState.usePhoneScannedOutputDevices) {
-      final address = AppState.bleAddress.value.trim();
-      if (address.isEmpty) {
-        if (showSuccess) {
-          _showToast('Select an output device first');
-        }
-        return;
+    if (AppState.usePhoneScannedOutputDevices && address.isEmpty) {
+      if (showSuccess) {
+        _showToast('Select an output device first');
       }
+      return;
+    }
+
+    if (address.isNotEmpty) {
       await _writeMetadataToken('BLE_UUID_ADDR=$address', showSuccess: false);
     }
 
@@ -898,7 +911,7 @@ class _VocalPointShellState extends State<VocalPointShell> {
 
     if (showSuccess) {
       _showToast(
-        AppState.usePhoneScannedOutputDevices
+        address.isNotEmpty
             ? 'Sent BLE_UUID_ADDR and AUDIO_OUT_NAME'
             : 'Sent AUDIO_OUT_NAME',
       );
@@ -1818,8 +1831,8 @@ class _VocalPointShellState extends State<VocalPointShell> {
                       TextButton(
                         onPressed: isVocalPoint
                             ? _disconnectVocalPoint
-                            : _clearOutputSelection,
-                        child: Text(isVocalPoint ? 'Disconnect' : 'Clear'),
+                            : _disconnectOutputDevice,
+                        child: const Text('Disconnect'),
                       ),
                   ],
                 );
