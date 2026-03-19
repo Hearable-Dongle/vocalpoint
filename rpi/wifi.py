@@ -33,7 +33,8 @@ class WifiManager:
         cmd: list[str],
         check: bool = True,
     ) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(cmd, check=check, text=True, capture_output=True)
+        sudo_cmd = ["sudo", *cmd]
+        return subprocess.run(sudo_cmd, check=check, text=True, capture_output=True)
 
     def scan_networks(self) -> List[str]:
         try:
