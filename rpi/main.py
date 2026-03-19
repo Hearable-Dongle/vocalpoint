@@ -1,25 +1,21 @@
 #!/usr/bin/env python3
-# Local imports
+import time
+
 from bt import BT_Interface
 from config import Session_Config
 from i2c import I2C_Interface
 
-import time
-
-SCAN_SLICE_SEC = 1
-ANNOUNCE_INTERVAL_SEC = 5.0
+BLE_SCAN_SEC = 15
+SCAN_INTERVAL_SEC = 5.0
 CONNECT_RETRY_COOLDOWN_SEC = 1.0
 IDLE_SLEEP_SEC = 0.2
-
 
 def _normalize_device_name(name: str) -> str:
     return name.strip().casefold()
 
-
-def _merge_devices(cache: dict[str, str], new_devices: dict[str, str]) -> None:
+def _merge_devices_list(cache: dict[str, str], new_devices: dict[str, str]) -> None:
     for addr, name in new_devices.items():
         cache[str(addr)] = name
-
 
 def _resolve_device_address(bt: BT_Interface, cached_devices: dict[str, str], device_name: str) -> str | None:
     wanted = _normalize_device_name(device_name)
@@ -36,16 +32,10 @@ def _resolve_device_address(bt: BT_Interface, cached_devices: dict[str, str], de
 
     return None
 
-
-def _handle_output_device_actions(
-    i2c: I2C_Interface,
-    bt: BT_Interface,
-    logger,
-    cached_devices: dict[str, str],
-) -> bool:
+def _handle_output_device_actions(i2c: I2C_Interface, bt: BT_Interface, logger, cached_devices: dict[str, str]) -> bool:
     handled = False
-
     disconnect_name = i2c.take_audio_out_disconnect_name().strip()
+
     if disconnect_name:
         handled = True
         address = _resolve_device_address(bt, cached_devices, disconnect_name)
@@ -72,27 +62,20 @@ def _handle_output_device_actions(
 
     return handled
 
-
-def _announce_output_devices(i2c: I2C_Interface, devices: dict[str, str]) -> None:
+def _send_output_devices(i2c: I2C_Interface, devices: dict[str, str]) -> None:
     for device_name in devices.values():
         i2c.write_audio_out_name(device_name)
         print(f"Found device: {device_name}")
-        time.sleep(0.1)
+        time.sleep(0.3)
 
-
-def _scan_and_cache(bt: BT_Interface, cached_devices: dict[str, str], duration: int = SCAN_SLICE_SEC) -> dict[str, str]:
+def _scan_and_cache(bt: BT_Interface, cached_devices: dict[str, str], duration: int = BLE_SCAN_SEC) -> dict[str, str]:
     scanned_devices = bt.scan(duration=duration)
-    _merge_devices(cached_devices, scanned_devices)
+    _merge_devices_list(cached_devices, scanned_devices)
     return scanned_devices
 
-
-def _connect_selected_output(
-    bt: BT_Interface,
-    logger,
-    cached_devices: dict[str, str],
-    device_name: str,
-) -> bool:
+def _connect_selected_output(bt: BT_Interface, logger, cached_devices: dict[str, str], device_name: str) -> bool:
     address = _resolve_device_address(bt, cached_devices, device_name)
+
     if address is None:
         print(f"No address found for selected device: {device_name}")
         logger.warning(f"No address found for selected device '{device_name}'")
@@ -111,7 +94,6 @@ def _connect_selected_output(
     print(f"Connected to {device_name} with address {address}")
     logger.info(f"Connected to '{device_name}' at {address}")
     return True
-
 
 def main() -> int:
     cfg = Session_Config()
@@ -138,22 +120,30 @@ def main() -> int:
                 next_connect_attempt_at = now
 
             selected_name = i2c.get_audio_out_name().strip()
+
             if selected_name and selected_name != last_selected_name and now >= next_connect_attempt_at:
                 print(f"Selected output from app: {selected_name}")
+
                 if _connect_selected_output(bt, cfg.logger, cached_devices, selected_name):
                     last_selected_name = selected_name
+
                 else:
-                    _scan_and_cache(bt, cached_devices, duration=SCAN_SLICE_SEC)
+                    _scan_and_cache(bt, cached_devices, duration=BLE_SCAN_SEC)
+
                     if _connect_selected_output(bt, cfg.logger, cached_devices, selected_name):
                         last_selected_name = selected_name
+
                     else:
                         next_connect_attempt_at = time.monotonic() + CONNECT_RETRY_COOLDOWN_SEC
 
             now = time.monotonic()
-            if now - last_announced_at >= ANNOUNCE_INTERVAL_SEC:
-                _scan_and_cache(bt, cached_devices, duration=SCAN_SLICE_SEC)
+
+            if now - last_announced_at >= SCAN_INTERVAL_SEC:
+                _scan_and_cache(bt, cached_devices, duration=BLE_SCAN_SEC)
+
                 if cached_devices:
-                    _announce_output_devices(i2c, cached_devices)
+                    _send_output_devices(i2c, cached_devices)
+
                 last_announced_at = time.monotonic()
 
             time.sleep(IDLE_SLEEP_SEC)

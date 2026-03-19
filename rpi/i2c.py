@@ -283,7 +283,7 @@ class I2C_Interface:
         interval_ms: int = 100,
         *,
         allow_reboot: bool = False,
-        reboot_command: str = "sudo systemctl reboot",
+        reboot_command: str = "sudo reboot",
         enable_voice_test: bool = False,
         emit_logs: bool = False,
         json_output: bool = False,
