@@ -91,7 +91,7 @@ def process_callback_audio(audio_bytes: bytes, channels: int) -> bytes:
  
     # ####
     # print()
-    # mono_float32 = _get_adapter().process_chunk(selected_channels)
+    mono_float32 = _get_adapter().process_chunk(selected_channels)
     # print("ADAPTED shape", mono_float32.shape)
     # mono = np.asarray(mono_float32, dtype=np.float32).reshape(-1)
     # clipped = np.clip(mono * 32767.0, -32768.0, 32767.0)
@@ -101,7 +101,7 @@ def process_callback_audio(audio_bytes: bytes, channels: int) -> bytes:
 
 
 
-    mono_float32 = np.array(selected_channels, dtype=np.float32).mean(axis=0) / 32768.0
+    # mono_float32 = np.array(selected_channels, dtype=np.float32).mean(axis=0) / 32768.0
     print("mean float shape", mono_float32.shape)
 
     return _float32_mono_to_pcm16_bytes(mono_float32, expected_samples=interleaved.shape[0])
