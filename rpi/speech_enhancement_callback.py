@@ -8,6 +8,8 @@ import numpy as np
 _CHANNEL_MAP = (2, 3, 4, 5)
 _INPUT_SAMPLE_RATE_HZ = 16000
 _EXPECTED_FRAME_SAMPLES = 160
+_OWN_VOICE_SUPPRESSION_ENABLED = True
+_OWN_VOICE_SUPPRESSION_DOA_DEG = 45
 _ADAPTER = None
 
 
@@ -33,10 +35,13 @@ def _load_adapter_class():
 
 def _get_adapter():
     global _ADAPTER
-    print("ADAPTER GOTTEN", type(_ADAPTER))
     if _ADAPTER is None:
         adapter_class = _load_adapter_class()
-        _ADAPTER = adapter_class(input_sample_rate_hz=_INPUT_SAMPLE_RATE_HZ)
+        _ADAPTER = adapter_class(
+            input_sample_rate_hz=_INPUT_SAMPLE_RATE_HZ,
+            own_voice_suppression_enabled=_OWN_VOICE_SUPPRESSION_ENABLED,
+            own_voice_suppression_doa_deg=_OWN_VOICE_SUPPRESSION_DOA_DEG,
+        )
     return _ADAPTER
 
 
@@ -76,32 +81,11 @@ def _float32_mono_to_pcm16_bytes(audio_mono: np.ndarray, expected_samples: int) 
         raise ValueError(f"adapter returned {mono.shape[0]} mono samples, expected {expected_samples}")
 
     clipped = np.clip(mono * 32767.0, -32768.0, 32767.0)
-    print("mean/std", clipped.mean(), clipped.std())
-
     return clipped.astype(np.int16).tobytes()
 
 
 def process_callback_audio(audio_bytes: bytes, channels: int) -> bytes:
-    interleaved = _decode_interleaved_channels(audio_bytes, channels) # (160, 6)
-    selected_channels = _select_adapter_channels(interleaved) # len 4
-    print("len select chan", len(selected_channels)), # 4
-
-    # mono_float32 = _get_adapter().process_chunk(selected_channels)
-    # print("Mono float 3 shape", mono_float32.shape)
- 
-    # ####
-    # print()
+    interleaved = _decode_interleaved_channels(audio_bytes, channels)
+    selected_channels = _select_adapter_channels(interleaved)
     mono_float32 = _get_adapter().process_chunk(selected_channels)
-    # print("ADAPTED shape", mono_float32.shape)
-    # mono = np.asarray(mono_float32, dtype=np.float32).reshape(-1)
-    # clipped = np.clip(mono * 32767.0, -32768.0, 32767.0)
-    # print("azdapted mean/std", clipped.mean(), clipped.std())
-    # print()
-    # ####
-
-
-
-    # mono_float32 = np.array(selected_channels, dtype=np.float32).mean(axis=0) / 32768.0
-    print("mean float shape", mono_float32.shape)
-
     return _float32_mono_to_pcm16_bytes(mono_float32, expected_samples=interleaved.shape[0])
