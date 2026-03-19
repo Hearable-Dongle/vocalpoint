@@ -1193,14 +1193,3 @@ class BT_Interface:
 
         # Return the current hardfault status
         return self.__hardfault
-
-    def properties(self, mac: str) -> dict:
-        try:
-            device_props = dbus.Interface(
-                self.__bus.get_object(BLUEZ_SERVICE, DEVICE_PREFIX + mac.replace(':', '_').upper()),
-                'org.freedesktop.DBus.Properties'
-            )
-            return dict(device_props.GetAll(BLUEZ_SERVICE + '.Device1'))
-        except dbus.exceptions.DBusException as e:
-            self.__log_failure("properties", device=mac, error=str(e))
-            return {}
