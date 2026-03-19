@@ -39,6 +39,7 @@ class WifiManager:
         try:
             self.run(["nmcli", "radio", "wifi", "on"])
             self.__logger.info("Wi-Fi radio enabled")
+            print(f"[wifi] radio enabled on {self.ifname}")
         except subprocess.CalledProcessError as e:
             self.__log_failure(
                 "scan_networks.radio_on",
@@ -53,6 +54,7 @@ class WifiManager:
         )
         if result.returncode == 0:
             self.__logger.info(f"Wi-Fi rescan requested on {self.ifname}")
+            print(f"[wifi] rescan requested on {self.ifname}")
         else:
             self.__log_failure(
                 "scan_networks.rescan",
@@ -83,8 +85,12 @@ class WifiManager:
             self.__logger.info(
                 "Available Wi-Fi networks:\n" + textwrap.indent("\n".join(networks), "\t")
             )
+            print("[wifi] available networks:")
+            for network in networks:
+                print(f"[wifi]   {network}")
         else:
             self.__logger.info("Available Wi-Fi networks: none found")
+            print("[wifi] available networks: none found")
         return networks
 
     def connect_from_i2c(self, ssid: str, password: str) -> str:
@@ -92,6 +98,7 @@ class WifiManager:
         password = password.strip()
 
         self.__logger.info(f"Received Wi-Fi connect request for SSID '{ssid}'")
+        print(f"[wifi] received connect request for SSID '{ssid}'")
 
         if not ssid:
             self.__log_failure(
@@ -110,6 +117,7 @@ class WifiManager:
             )
             return "Error: username/network name is wrong"
 
+        print(f"[wifi] target SSID '{ssid}' found, attempting nmcli connect")
         result = self.run(
             [
                 "nmcli",
@@ -124,6 +132,11 @@ class WifiManager:
             ],
             check=False,
         )
+        print(f"[wifi] nmcli connect return code: {result.returncode}")
+        if result.stdout.strip():
+            print(f"[wifi] nmcli stdout: {result.stdout.strip()}")
+        if result.stderr.strip():
+            print(f"[wifi] nmcli stderr: {result.stderr.strip()}")
 
         if result.returncode != 0:
             self.__log_failure(
@@ -135,6 +148,9 @@ class WifiManager:
             return "Error: password is wrong"
 
         self.__logger.info(f"Connected to Wi-Fi network '{ssid}' on {self.ifname}")
+        print(f"[wifi] connected to '{ssid}' on {self.ifname}")
+        current = self.current_wifi()
+        print(f"[wifi] current active network after connect: '{current}'")
         return f"Connected to {ssid}"
 
     def current_wifi(self) -> str:

@@ -23,10 +23,19 @@ def _handle_wifi_updates(
         return last_wifi_request
 
     wifi_ssid, wifi_pwd = current_wifi_request
+    print(
+        f"[main] wifi request changed:"
+        f" ssid='{wifi_ssid}' password_len={len(wifi_pwd)}"
+    )
+    logger.info(
+        f"Wi-Fi request changed: ssid='{wifi_ssid}' password_len={len(wifi_pwd)}"
+    )
     if wifi_ssid and wifi_pwd:
         result = wifi.connect_from_i2c(wifi_ssid, wifi_pwd)
         logger.info(result)
         print(result)
+    else:
+        print("[main] wifi request incomplete, waiting for both SSID and password")
 
     return current_wifi_request
 
@@ -40,7 +49,7 @@ def main() -> int:
         autostart=True,
         enable_voice_test=False,
     )
-    print(i2c.get_state())
+    print(f"[main] initial i2c state: {i2c.get_state()}")
 
     last_wifi_request = ("", "")
 
