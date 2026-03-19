@@ -2,8 +2,27 @@
 import time
 
 from bt import BT_Interface
+from usb import USB_Interface
 from config import Session_Config
 from i2c import I2C_Interface
+import numpy as np
+
+
+def callback(audio_bytes: bytes, channels: int) -> bytes:
+    """Callback that receives audio frame and sends to Bluetooth sink."""
+    # Convert bytes to numpy array
+    audio_int16 = np.frombuffer(audio_bytes, dtype=np.int16)
+    
+    # Extract only the first channel from interleaved audio data
+    # PyAudio delivers interleaved channels: [L0, R0, C0, LFE0, SL0, SR0, L1, R1, ...]
+    # So we take every channels-th sample starting from index 0
+    first_channel = audio_int16[::channels]  # Get samples 0, 6, 12, 18, ... (first channel)
+    
+    # Convert back to bytes
+    output_bytes = first_channel.astype(np.int16).tobytes()
+    
+    return output_bytes
+
 
 BLE_SCAN_SEC = 15
 SCAN_INTERVAL_SEC = 5.0
@@ -97,14 +116,19 @@ def _connect_selected_output(bt: BT_Interface, logger, cached_devices: dict[str,
 
 def main() -> int:
     cfg = Session_Config()
+
+    # Initialize Bluetooth, USB and I2C interfaces
     bt = BT_Interface(cfg.logger)
+    usb = USB_Interface(cfg.logger, cfg.source, cfg.fs, cfg.frame)
     i2c = I2C_Interface(autostart=True, enable_voice_test=False, emit_logs=True)
 
-    print(i2c.get_state())
-
+    # Configure Bluetooth interface
     assert bt.power_off()
     assert bt.power_on()
     assert bt.agent_on()
+
+    # Configure USB interface
+    assert usb.connect()
 
     cached_devices: dict[str, str] = {}
     last_announced_at = 0.0

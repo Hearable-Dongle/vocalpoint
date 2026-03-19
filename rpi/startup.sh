@@ -6,7 +6,7 @@ cd "$SCRIPT_DIR"
 
 # Check for missing dependencies
 echo "Checking dependencies..."
-REQUIRED_CMDS=("pactl" "pw-loopback" "bluetoothd" "pkill" "sudo")
+REQUIRED_CMDS=("pactl" "bluetoothd" "pkill" "sudo")
 MISSING=()
 
 for cmd in "${REQUIRED_CMDS[@]}"; do
@@ -14,6 +14,14 @@ for cmd in "${REQUIRED_CMDS[@]}"; do
         MISSING+=("$cmd")
     fi
 done
+
+# Check for Python modules
+if ! python3 -c "import dbus" 2>/dev/null; then
+    MISSING+=("python3-dbus")
+fi
+if ! python3 -c "import pyaudio" 2>/dev/null; then
+    MISSING+=("python3-pyaudio")
+fi
 
 # Install dependencies only if any are missing
 if [ ${#MISSING[@]} -gt 0 ]; then
@@ -27,7 +35,9 @@ if [ ${#MISSING[@]} -gt 0 ]; then
         python3-dbus \
         pulseaudio-utils \
         pipewire \
-        procps
+        procps \
+        portaudio19-dev \
+        python3-pyaudio
     
     # Verify installation
     echo "Verifying dependencies..."

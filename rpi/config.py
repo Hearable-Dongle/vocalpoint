@@ -9,7 +9,7 @@ class Session_Config():
 
     # Private configuration variables
     __sink: str = "BC:87:FA:57:47:0E"
-    __source: str = "alsa_input.usb-Seeed_Studio_reSpeaker_XVF3800_4-Mic_Array_101991441252800170-00.analog-surround-21"
+    __source: str = "ReSpeaker"
     __frame: int = 160
     __fs: int = 16000
     __deps: list[str] = [
@@ -21,6 +21,8 @@ class Session_Config():
     ]
     __python_deps: list[str] = [
         "dbus",
+        "pyaudio",
+        "numpy",
     ]
 
     def __init__(self) -> None:
@@ -83,7 +85,7 @@ class Session_Config():
     
     @property
     def fs(self):
-        # Return private list of Bluetooth sink addresses
+        # Return private sampling frequency
         return self.__fs
     
     @property
