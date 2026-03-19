@@ -1,5 +1,5 @@
 # Standard imports
-from typing import Optional
+from typing import Callable, Optional
 import logging
 import threading
 
@@ -46,6 +46,7 @@ class Audio_Interface():
         self.__channels = channels
         self.__running: bool = False
         self.__thread: Optional[threading.Thread] = None
+        self.__callback: Optional[Callable[[bytes, int], bytes]] = None
 
         # Define hardfault flag
         self.__hardfault: bool = False
@@ -75,7 +76,7 @@ class Audio_Interface():
 
                 else:
                     # Process audio frame with callback function
-                    processed_frame = callback(audio_frame, self.__channels)
+                    processed_frame = self.__callback(audio_frame, self.__channels)
 
                     # Write processed audio frame to Bluetooth interface
                     if not self.__bt.write_audio(processed_frame):
@@ -94,13 +95,15 @@ class Audio_Interface():
             # Ensure running flag is cleared if thread exits due to exception
             self.__running = False
     
-    def start(self) -> bool:
+    def start(self, callback: Callable[[bytes, int], bytes]) -> bool:
         """
         Start audio streaming in background thread
         
         Parameters
         ----------
-        None
+        callback : Callable[[bytes, int], bytes]
+            Callback function to process audio frames. Takes audio bytes and channel count,
+            returns processed audio bytes.
 
         Returns
         -------
@@ -113,6 +116,9 @@ class Audio_Interface():
 
         # Check if already running to prevent multiple threads
         if not self.__running:
+            # Store the callback function
+            self.__callback = callback
+
             # Set running flag
             self.__running = True
 
