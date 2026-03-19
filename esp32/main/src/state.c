@@ -468,6 +468,9 @@ static int parse_and_apply_token_locked(char *token, uint32_t *dirty_mask)
 
     if (key_equals(key, "AUDIO_OUT_DISCONNECT")) {
         if (queue_audio_out_disconnect_name_locked(value)) {
+            if (set_audio_out_name_set_locked("")) {
+                *dirty_mask |= VP_FLAG_AUDIO_OUT_NAME;
+            }
             *dirty_mask |= VP_FLAG_AUDIO_OUT_DISCONNECT;
             return 1;
         }
@@ -476,6 +479,9 @@ static int parse_and_apply_token_locked(char *token, uint32_t *dirty_mask)
 
     if (key_equals(key, "AUDIO_OUT_FORGET")) {
         if (queue_audio_out_forget_name_locked(value)) {
+            if (set_audio_out_name_set_locked("")) {
+                *dirty_mask |= VP_FLAG_AUDIO_OUT_NAME;
+            }
             *dirty_mask |= VP_FLAG_AUDIO_OUT_FORGET;
             return 1;
         }
@@ -709,6 +715,19 @@ uint32_t vp_state_get_dirty_flags(void)
 void vp_state_clear_dirty_bits(uint32_t mask)
 {
     lock_state();
+
+    if ((mask & VP_FLAG_AUDIO_OUT_DISCONNECT) != 0U) {
+        copy_string(s_state.audio_out_disconnect_name,
+                    sizeof(s_state.audio_out_disconnect_name),
+                    "");
+    }
+
+    if ((mask & VP_FLAG_AUDIO_OUT_FORGET) != 0U) {
+        copy_string(s_state.audio_out_forget_name,
+                    sizeof(s_state.audio_out_forget_name),
+                    "");
+    }
+
     s_dirty_flags &= ~(mask & VP_STATUS_BITS_MASK);
     s_dirty_flags &= VP_STATUS_BITS_MASK;
 

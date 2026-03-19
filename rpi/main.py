@@ -6,15 +6,33 @@ from i2c import I2C_Interface
 
 import time
 
+SCAN_SLICE_SEC = 1
+ANNOUNCE_INTERVAL_SEC = 5.0
+CONNECT_RETRY_COOLDOWN_SEC = 1.0
+IDLE_SLEEP_SEC = 0.2
 
-def _resolve_device_address(bt: BT_Interface, scanned_devices: dict[str, str], device_name: str) -> str | None:
-    for addr, name in scanned_devices.items():
-        if name == device_name:
+
+def _normalize_device_name(name: str) -> str:
+    return name.strip().casefold()
+
+
+def _merge_devices(cache: dict[str, str], new_devices: dict[str, str]) -> None:
+    for addr, name in new_devices.items():
+        cache[str(addr)] = name
+
+
+def _resolve_device_address(bt: BT_Interface, cached_devices: dict[str, str], device_name: str) -> str | None:
+    wanted = _normalize_device_name(device_name)
+
+    for addr, name in cached_devices.items():
+        if _normalize_device_name(name) == wanted:
             return str(addr)
 
     for addr, name in bt.devices(audio_sink=True).items():
-        if name == device_name:
-            return str(addr)
+        addr_str = str(addr)
+        cached_devices[addr_str] = name
+        if _normalize_device_name(name) == wanted:
+            return addr_str
 
     return None
 
@@ -23,15 +41,16 @@ def _handle_output_device_actions(
     i2c: I2C_Interface,
     bt: BT_Interface,
     logger,
-    scanned_devices: dict[str, str],
+    cached_devices: dict[str, str],
 ) -> bool:
     handled = False
 
     disconnect_name = i2c.take_audio_out_disconnect_name().strip()
     if disconnect_name:
         handled = True
-        address = _resolve_device_address(bt, scanned_devices, disconnect_name)
+        address = _resolve_device_address(bt, cached_devices, disconnect_name)
         if address is None:
+            print(f"Disconnect requested for {disconnect_name}, but no matching MAC was found")
             logger.warning(f"Disconnect requested for '{disconnect_name}', but no matching MAC was found")
         else:
             logger.info(f"Disconnect requested for '{disconnect_name}' at {address}")
@@ -40,45 +59,58 @@ def _handle_output_device_actions(
     forget_name = i2c.take_audio_out_forget_name().strip()
     if forget_name:
         handled = True
-        address = _resolve_device_address(bt, scanned_devices, forget_name)
+        address = _resolve_device_address(bt, cached_devices, forget_name)
         if address is None:
+            print(f"Forget requested for {forget_name}, but no matching MAC was found")
             logger.warning(f"Forget requested for '{forget_name}', but no matching MAC was found")
         else:
             logger.info(f"Forget requested for '{forget_name}' at {address}")
             bt.disconnect(address)
             bt.untrust(address)
             bt.unpair(address)
+            cached_devices.pop(address, None)
 
     return handled
 
 
-def _announce_output_devices(i2c: I2C_Interface, devices: dict[str, str], repeats: int = 3) -> None:
-    for _ in range(repeats):
-        for device_name in devices.values():
-            i2c.write_audio_out_name(device_name)
-            print(f"Found device: {device_name}")
-            time.sleep(0.3)
+def _announce_output_devices(i2c: I2C_Interface, devices: dict[str, str]) -> None:
+    for device_name in devices.values():
+        i2c.write_audio_out_name(device_name)
+        print(f"Found device: {device_name}")
+        time.sleep(0.1)
+
+
+def _scan_and_cache(bt: BT_Interface, cached_devices: dict[str, str], duration: int = SCAN_SLICE_SEC) -> dict[str, str]:
+    scanned_devices = bt.scan(duration=duration)
+    _merge_devices(cached_devices, scanned_devices)
+    return scanned_devices
 
 
 def _connect_selected_output(
     bt: BT_Interface,
     logger,
-    scanned_devices: dict[str, str],
+    cached_devices: dict[str, str],
     device_name: str,
-) -> None:
-    address = _resolve_device_address(bt, scanned_devices, device_name)
+) -> bool:
+    address = _resolve_device_address(bt, cached_devices, device_name)
     if address is None:
-        raise ValueError(f"No address found for device {device_name}")
+        print(f"No address found for selected device: {device_name}")
+        logger.warning(f"No address found for selected device '{device_name}'")
+        return False
 
     print(f"Attempting to connect to {device_name}, with address {address}")
     logger.info(f"Attempting to connect to '{device_name}' at {address}")
 
-    bt.pair(address)
-    bt.trust(address)
-    bt.connect(address)
+    if not bt.pair(address):
+        return False
+    if not bt.trust(address):
+        return False
+    if not bt.connect(address):
+        return False
 
     print(f"Connected to {device_name} with address {address}")
     logger.info(f"Connected to '{device_name}' at {address}")
+    return True
 
 
 def main() -> int:
@@ -92,36 +124,39 @@ def main() -> int:
     assert bt.power_on()
     assert bt.agent_on()
 
-    scanned_devices: dict[str, str] = {}
-    last_selected_name = ""
+    cached_devices: dict[str, str] = {}
+    last_announced_at = 0.0
+    last_selected_name = ''
+    next_connect_attempt_at = 0.0
 
     try:
         while True:
-            if _handle_output_device_actions(i2c, bt, cfg.logger, scanned_devices):
-                last_selected_name = ""
+            now = time.monotonic()
 
-            scanned_devices = bt.scan(duration=15)
-            _announce_output_devices(i2c, scanned_devices)
-            if _handle_output_device_actions(i2c, bt, cfg.logger, scanned_devices):
-                last_selected_name = ""
-                continue
+            if _handle_output_device_actions(i2c, bt, cfg.logger, cached_devices):
+                last_selected_name = ''
+                next_connect_attempt_at = now
 
             selected_name = i2c.get_audio_out_name().strip()
-            if not selected_name or selected_name == last_selected_name:
-                time.sleep(0.5)
-                continue
+            if selected_name and selected_name != last_selected_name and now >= next_connect_attempt_at:
+                print(f"Selected output from app: {selected_name}")
+                if _connect_selected_output(bt, cfg.logger, cached_devices, selected_name):
+                    last_selected_name = selected_name
+                else:
+                    _scan_and_cache(bt, cached_devices, duration=SCAN_SLICE_SEC)
+                    if _connect_selected_output(bt, cfg.logger, cached_devices, selected_name):
+                        last_selected_name = selected_name
+                    else:
+                        next_connect_attempt_at = time.monotonic() + CONNECT_RETRY_COOLDOWN_SEC
 
-            _connect_selected_output(bt, cfg.logger, scanned_devices, selected_name)
-            last_selected_name = selected_name
+            now = time.monotonic()
+            if now - last_announced_at >= ANNOUNCE_INTERVAL_SEC:
+                _scan_and_cache(bt, cached_devices, duration=SCAN_SLICE_SEC)
+                if cached_devices:
+                    _announce_output_devices(i2c, cached_devices)
+                last_announced_at = time.monotonic()
 
-            while True:
-                if _handle_output_device_actions(i2c, bt, cfg.logger, scanned_devices):
-                    last_selected_name = ""
-                    break
-                current_selected_name = i2c.get_audio_out_name().strip()
-                if current_selected_name != last_selected_name:
-                    break
-                time.sleep(0.5)
+            time.sleep(IDLE_SLEEP_SEC)
     except KeyboardInterrupt:
         return 0
     finally:

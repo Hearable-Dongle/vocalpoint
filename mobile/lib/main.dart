@@ -539,6 +539,8 @@ class _VocalPointShellState extends State<VocalPointShell> {
     final deviceName = AppState.audioOutputDeviceName.value?.trim() ?? '';
     if (deviceId.isEmpty && deviceName.isEmpty) return;
 
+    AppState.clearOutputSelection();
+
     if (_hasConnectedVocalPoint && deviceName.isNotEmpty) {
       await _writeMetadataToken('AUDIO_OUT_FORGET=$deviceName', showSuccess: false);
     }
@@ -551,7 +553,6 @@ class _VocalPointShellState extends State<VocalPointShell> {
       AppState.autoConnectOutputDeviceIds.value,
     )..remove(deviceId);
     AppState.autoConnectOutputDeviceIds.value = autoConnect;
-    AppState.clearOutputSelection();
     _showToast('Forgot ${deviceName.isEmpty ? 'device' : deviceName}');
   }
 
@@ -788,11 +789,11 @@ class _VocalPointShellState extends State<VocalPointShell> {
 
   Future<void> _clearOutputSelection() async {
     final deviceName = AppState.audioOutputDeviceName.value?.trim() ?? '';
+    AppState.clearOutputSelection();
     if (_hasConnectedVocalPoint && deviceName.isNotEmpty) {
       await _writeMetadataToken('AUDIO_OUT_DISCONNECT=$deviceName', showSuccess: false);
     }
-    AppState.clearOutputSelection();
-    _showToast('Cleared output device selection');
+    _showToast('Disconnected output device');
   }
 
   Future<void> _selectOutputDeviceName(String name) async {
