@@ -14,8 +14,10 @@ def main() -> int:
     # Create Bluetooth interface with logger
     bt = BT_Interface(cfg.logger)
 
-    i2c = I2C_Interface(autostart=True)
-
+    i2c = I2C_Interface(
+        autostart=True,
+        enable_voice_test=False,
+    )
     print(i2c.get_state())
 
     # Initialize Bluetooth interface
@@ -31,7 +33,7 @@ def main() -> int:
             i2c.write_audio_out_name(device)
             time.sleep(0.3)
 
-        while(i2c.get_audio_out_name() != None):
+        while i2c.get_audio_out_name() == "":
             time.sleep(0.3)
 
         device_name = i2c.get_audio_out_name()
