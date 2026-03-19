@@ -82,6 +82,21 @@ static int key_equals(const char *lhs, const char *rhs)
     return (*lhs == '\0' && *rhs == '\0');
 }
 
+static int value_is_truthy(const char *value)
+{
+    if (value == NULL) {
+        return 0;
+    }
+
+    return strcmp(value, "1") == 0 ||
+           strcmp(value, "true") == 0 ||
+           strcmp(value, "TRUE") == 0 ||
+           strcmp(value, "yes") == 0 ||
+           strcmp(value, "YES") == 0 ||
+           strcmp(value, "on") == 0 ||
+           strcmp(value, "ON") == 0;
+}
+
 static void lock_state(void)
 {
     if (s_state_mutex != NULL) {
@@ -160,6 +175,7 @@ static void commit_state_update_locked(uint32_t dirty_mask)
 {
     s_state.seq++;
     s_dirty_flags |= VP_FLAG_CHANGED | dirty_mask;
+    s_dirty_flags &= VP_STATUS_BITS_MASK;
     rebuild_cached_frame_locked();
 }
 
@@ -374,8 +390,7 @@ static int parse_and_apply_token_locked(char *token, uint32_t *dirty_mask)
 
     if (key_equals(key, "BLE_UUID_ADDR") || key_equals(key, "BLE_ADDR") || key_equals(key, "ADDR")) {
         if (set_ble_uuid_addr_locked(value)) {
-            *dirty_mask |= VP_FLAG_BLE_UUID_ADDR;
-            return 1;
+            rebuild_cached_frame_locked();
         }
         return 0;
     }
@@ -421,6 +436,14 @@ static int parse_and_apply_token_locked(char *token, uint32_t *dirty_mask)
         return 0;
     }
 
+    if (key_equals(key, "REBOOT") || key_equals(key, "RESTART")) {
+        if (value_is_truthy(value) && (s_dirty_flags & VP_FLAG_REBOOT) == 0U) {
+            *dirty_mask |= VP_FLAG_REBOOT;
+            return 1;
+        }
+        return 0;
+    }
+
     return 0;
 }
 
@@ -432,6 +455,8 @@ void vp_state_init(void)
 
     lock_state();
     memset(&s_state, 0, sizeof(s_state));
+    memset(s_cached_frame, 0, sizeof(s_cached_frame));
+    s_dirty_flags = 0U;
 
 #if I2C_TESTING_MODE
     (void)set_volume_locked(2U);
@@ -442,7 +467,7 @@ void vp_state_init(void)
     (void)set_wifi_ssid_locked("Test SSID");
     (void)set_wifi_pwd_locked("Test Password");
     (void)register_voice_profile_name_locked("Test Voice");
-    commit_state_update_locked(VP_FLAG_VOL | VP_FLAG_VOICE_PROFILE_NUM | VP_FLAG_BLE_UUID_ADDR |
+    commit_state_update_locked(VP_FLAG_VOL | VP_FLAG_VOICE_PROFILE_NUM |
                                VP_FLAG_AUDIO_OUT_NAME | VP_FLAG_WIFI_SSID | VP_FLAG_WIFI_PWD);
 #else
     (void)set_volume_locked(50U);
@@ -453,7 +478,7 @@ void vp_state_init(void)
     (void)set_wifi_ssid_locked("");
     (void)set_wifi_pwd_locked("");
     (void)register_voice_profile_name_locked("");
-    commit_state_update_locked(VP_FLAG_VOL | VP_FLAG_VOICE_PROFILE_NUM | VP_FLAG_BLE_UUID_ADDR |
+    commit_state_update_locked(VP_FLAG_VOL | VP_FLAG_VOICE_PROFILE_NUM |
                                VP_FLAG_AUDIO_OUT_NAME | VP_FLAG_WIFI_SSID | VP_FLAG_WIFI_PWD);
 #endif
 
@@ -482,7 +507,7 @@ void vp_state_set_ble_uuid_addr(const char *addr)
 {
     lock_state();
     if (set_ble_uuid_addr_locked(addr)) {
-        commit_state_update_locked(VP_FLAG_BLE_UUID_ADDR);
+        rebuild_cached_frame_locked();
     }
     unlock_state();
 }
@@ -612,7 +637,7 @@ uint32_t vp_state_get_dirty_flags(void)
     uint32_t flags;
 
     lock_state();
-    flags = s_dirty_flags;
+    flags = s_dirty_flags & VP_STATUS_BITS_MASK;
     unlock_state();
     return flags;
 }
@@ -620,9 +645,10 @@ uint32_t vp_state_get_dirty_flags(void)
 void vp_state_clear_dirty_bits(uint32_t mask)
 {
     lock_state();
-    s_dirty_flags &= ~mask;
+    s_dirty_flags &= ~(mask & VP_STATUS_BITS_MASK);
+    s_dirty_flags &= VP_STATUS_BITS_MASK;
 
-    if ((s_dirty_flags & VP_PARAM_BITS_MASK) == 0U) {
+    if ((s_dirty_flags & (VP_STATUS_BITS_MASK & ~VP_FLAG_CHANGED)) == 0U) {
         s_dirty_flags &= ~VP_FLAG_CHANGED;
     }
     unlock_state();
@@ -656,7 +682,7 @@ void vp_state_testing_tick(void)
     (void)register_voice_profile_name_locked(voice_name);
 
     tick_count++;
-    commit_state_update_locked(VP_FLAG_VOL | VP_FLAG_VOICE_PROFILE_NUM | VP_FLAG_BLE_UUID_ADDR |
+    commit_state_update_locked(VP_FLAG_VOL | VP_FLAG_VOICE_PROFILE_NUM |
                                VP_FLAG_AUDIO_OUT_NAME | VP_FLAG_WIFI_SSID | VP_FLAG_WIFI_PWD);
 
     unlock_state();
