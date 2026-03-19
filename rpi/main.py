@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-# Local imports
+import time
+
 from bt import BT_Interface
 from usb import USB_Interface
 from config import Session_Config
+from i2c import I2C_Interface
 import numpy as np
 
 
@@ -22,77 +24,158 @@ def callback(audio_bytes: bytes, channels: int) -> bytes:
     return output_bytes
 
 
+BLE_SCAN_SEC = 15
+SCAN_INTERVAL_SEC = 5.0
+CONNECT_RETRY_COOLDOWN_SEC = 1.0
+IDLE_SLEEP_SEC = 0.2
+
+def _normalize_device_name(name: str) -> str:
+    return name.strip().casefold()
+
+def _merge_devices_list(cache: dict[str, str], new_devices: dict[str, str]) -> None:
+    for addr, name in new_devices.items():
+        cache[str(addr)] = name
+
+def _resolve_device_address(bt: BT_Interface, cached_devices: dict[str, str], device_name: str) -> str | None:
+    wanted = _normalize_device_name(device_name)
+
+    for addr, name in cached_devices.items():
+        if _normalize_device_name(name) == wanted:
+            return str(addr)
+
+    for addr, name in bt.devices(audio_sink=True).items():
+        addr_str = str(addr)
+        cached_devices[addr_str] = name
+        if _normalize_device_name(name) == wanted:
+            return addr_str
+
+    return None
+
+def _handle_output_device_actions(i2c: I2C_Interface, bt: BT_Interface, logger, cached_devices: dict[str, str]) -> bool:
+    handled = False
+    disconnect_name = i2c.take_audio_out_disconnect_name().strip()
+
+    if disconnect_name:
+        handled = True
+        address = _resolve_device_address(bt, cached_devices, disconnect_name)
+        if address is None:
+            print(f"Disconnect requested for {disconnect_name}, but no matching MAC was found")
+            logger.warning(f"Disconnect requested for '{disconnect_name}', but no matching MAC was found")
+        else:
+            logger.info(f"Disconnect requested for '{disconnect_name}' at {address}")
+            bt.disconnect(address)
+
+    forget_name = i2c.take_audio_out_forget_name().strip()
+    if forget_name:
+        handled = True
+        address = _resolve_device_address(bt, cached_devices, forget_name)
+        if address is None:
+            print(f"Forget requested for {forget_name}, but no matching MAC was found")
+            logger.warning(f"Forget requested for '{forget_name}', but no matching MAC was found")
+        else:
+            logger.info(f"Forget requested for '{forget_name}' at {address}")
+            bt.disconnect(address)
+            bt.untrust(address)
+            bt.unpair(address)
+            cached_devices.pop(address, None)
+
+    return handled
+
+def _send_output_devices(i2c: I2C_Interface, devices: dict[str, str]) -> None:
+    for device_name in devices.values():
+        i2c.write_audio_out_name(device_name)
+        print(f"Found device: {device_name}")
+        time.sleep(0.3)
+
+def _scan_and_cache(bt: BT_Interface, cached_devices: dict[str, str], duration: int = BLE_SCAN_SEC) -> dict[str, str]:
+    scanned_devices = bt.scan(duration=duration)
+    _merge_devices_list(cached_devices, scanned_devices)
+    return scanned_devices
+
+def _connect_selected_output(bt: BT_Interface, logger, cached_devices: dict[str, str], device_name: str) -> bool:
+    address = _resolve_device_address(bt, cached_devices, device_name)
+
+    if address is None:
+        print(f"No address found for selected device: {device_name}")
+        logger.warning(f"No address found for selected device '{device_name}'")
+        return False
+
+    print(f"Attempting to connect to {device_name}, with address {address}")
+    logger.info(f"Attempting to connect to '{device_name}' at {address}")
+
+    if not bt.pair(address):
+        return False
+    if not bt.trust(address):
+        return False
+    if not bt.connect(address):
+        return False
+
+    print(f"Connected to {device_name} with address {address}")
+    logger.info(f"Connected to '{device_name}' at {address}")
+    return True
+
 def main() -> int:
-    # Load session configuration
     cfg = Session_Config()
 
-    # Create Bluetooth and USB interface with logger
+    # Initialize Bluetooth, USB and I2C interfaces
     bt = BT_Interface(cfg.logger)
     usb = USB_Interface(cfg.logger, cfg.source, cfg.fs, cfg.frame)
+    i2c = I2C_Interface(autostart=True, enable_voice_test=False, emit_logs=True)
 
-    # Initialize Bluetooth interface
+    # Configure Bluetooth interface
     assert bt.power_off()
     assert bt.power_on()
     assert bt.agent_on()
 
-    # Connect USB interface
+    # Configure USB interface
     assert usb.connect()
 
-    # Scan for devices
-    devices = bt.scan(duration = 15) # 15 seconds was found to be the minimum time required
+    cached_devices: dict[str, str] = {}
+    last_announced_at = 0.0
+    last_selected_name = ''
+    next_connect_attempt_at = 0.0
 
-    # Get device info if sink was found
-    info = {}
-    if cfg.sink in devices:
-        info = bt.info(cfg.sink)
-        cfg.logger.info(f"Found target sink: {cfg.sink} - {info['Name']}")
-    else:
-        cfg.logger.info(f"Target sink not found: {cfg.sink}")
-        return 1
-
-    # Pair device if unpaired
-    if not info["Paired"]:
-        assert bt.pair(cfg.sink)
-        cfg.logger.info(f"Paired device: {info['Name']}")
-
-    # Trust device if untrusted
-    if not info["Trusted"]:
-        assert bt.trust(cfg.sink)
-        cfg.logger.info(f"Trusted device: {info['Name']}")
-
-    # Connect device if unconnected
-    if not info["Connected"]:
-        assert bt.connect(cfg.sink, cfg.fs)
-        cfg.logger.info(f"Connected device: {info['Name']}")
-
-    # Stream audio with consistent timing
     try:
-        consecutive_errors = 0
         while True:
-            audio_frame = usb.get_audio()
-            if audio_frame is None:
-                consecutive_errors += 1
-                if consecutive_errors > 10:
-                    cfg.logger.error("Too many consecutive read errors, stopping stream")
-                    break
-                continue
-            
-            consecutive_errors = 0
-            processed_frame = callback(audio_frame, usb.channels)
-            if not bt.write_audio(processed_frame):
-                cfg.logger.warning("Failed to write audio frame")
+            now = time.monotonic()
+
+            if _handle_output_device_actions(i2c, bt, cfg.logger, cached_devices):
+                last_selected_name = ''
+                next_connect_attempt_at = now
+
+            selected_name = i2c.get_audio_out_name().strip()
+
+            if selected_name and selected_name != last_selected_name and now >= next_connect_attempt_at:
+                print(f"Selected output from app: {selected_name}")
+
+                if _connect_selected_output(bt, cfg.logger, cached_devices, selected_name):
+                    last_selected_name = selected_name
+
+                else:
+                    _scan_and_cache(bt, cached_devices, duration=BLE_SCAN_SEC)
+
+                    if _connect_selected_output(bt, cfg.logger, cached_devices, selected_name):
+                        last_selected_name = selected_name
+
+                    else:
+                        next_connect_attempt_at = time.monotonic() + CONNECT_RETRY_COOLDOWN_SEC
+
+            now = time.monotonic()
+
+            if now - last_announced_at >= SCAN_INTERVAL_SEC:
+                _scan_and_cache(bt, cached_devices, duration=BLE_SCAN_SEC)
+
+                if cached_devices:
+                    _send_output_devices(i2c, cached_devices)
+
+                last_announced_at = time.monotonic()
+
+            time.sleep(IDLE_SLEEP_SEC)
     except KeyboardInterrupt:
-        cfg.logger.info("Interrupted by user, shutting down...")
-    except Exception as e:
-        cfg.logger.error(f"Error during streaming: {e}")
+        return 0
     finally:
-        if not bt.disconnect(cfg.sink):
-            cfg.logger.error("Failed to disconnect Bluetooth device")
-        if not usb.disconnect():
-            cfg.logger.error("Failed to disconnect USB device")
+        i2c.stop()
 
-    return 0
 
-# Script entry point
 if __name__ == "__main__":
     raise SystemExit(main())

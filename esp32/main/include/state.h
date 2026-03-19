@@ -37,10 +37,11 @@ extern "C" {
 #define VP_FRAME_MAGIC          0xA5
 #define VP_FRAME_VERSION        0x01
 
-// Current total size is 205 bytes before CRC, 207 bytes including CRC.
+// Current total size is 269 bytes before CRC, 271 bytes including CRC.
 #define VP_I2C_FRAME_SIZE (VP_MAGIC_BIT_LEN + VP_FRAME_VERSION_LEN + VP_SEQ_MAX_LEN + VP_VOLUME_LEN + \
                            VP_VOICE_PROFILE_NUM_LEN + VP_BLE_ADDR_MAX_LEN + VP_PARAM_MAX_LEN + \
                            VP_PARAM_MAX_LEN + VP_PARAM_MAX_LEN + VP_PARAM_MAX_LEN + \
+                           VP_PARAM_MAX_LEN + VP_PARAM_MAX_LEN + \
                            VP_VOICE_PROFILE_NAME_NUM_LEN + VP_VOICE_PROFILE_NAME_MAX_LEN + \
                            VP_CRC16_LEN)
 
@@ -53,6 +54,8 @@ typedef struct {
     char audio_out_name_set[VP_PARAM_MAX_LEN];
     char wifi_ssid[VP_PARAM_MAX_LEN];
     char wifi_pwd[VP_PARAM_MAX_LEN];
+    char audio_out_disconnect_name[VP_PARAM_MAX_LEN];
+    char audio_out_forget_name[VP_PARAM_MAX_LEN];
     uint8_t voice_profile_name_num;
     char voice_profile_name[VP_VOICE_PROFILE_NAME_MAX_LEN];
 } vp_state_snapshot_t;
@@ -87,6 +90,9 @@ void vp_state_set_voice_profile_number(uint8_t voice_profile_number);
 /**
  * @name vp_state_set_ble_uuid_addr
  * @brief Updates the BLE UUID/address string in shared state.
+ *
+ * This value is BLE metadata only. It is no longer part of the I2C dirty-bit
+ * parameter map now that bit 4 is used for the reboot flag.
  *
  * @param addr Zero-terminated BLE address string.
  *
@@ -205,8 +211,8 @@ void vp_state_update_from_ble_payload(const uint8_t *payload, uint16_t payload_l
  *
  * Bit positions match the VP_FLAG_* constants in i2c_protocol.h.
  * VP_FLAG_CHANGED (bit 0) is set whenever any field has been updated.
- * Individual parameter bits (VP_FLAG_VOL, VP_FLAG_VOICE_PROFILE_NUM, …) reflect which
- * fields have changed since the last call to vp_state_clear_dirty_bits().
+ * Individual status bits reflect which fields/events have changed since the
+ * last call to vp_state_clear_dirty_bits().
  *
  * @return uint32_t Current dirty flags.
  */
@@ -218,8 +224,9 @@ uint32_t vp_state_get_dirty_flags(void);
  * @name vp_state_clear_dirty_bits
  * @brief Atomically clears the specified bits from the dirty-flag register.
  *
- * Called by i2c_bridge after the RPi has successfully fetched a parameter.
- * If clearing the last parameter bit also makes VP_PARAM_BITS_MASK == 0,
+ * Called by i2c_bridge after the RPi has successfully fetched a parameter or
+ * acknowledged a status bit such as VP_FLAG_REBOOT. If clearing the last
+ * remaining dirty status bit also makes the status mask empty,
  * VP_FLAG_CHANGED is automatically cleared as well.
  *
  * @param mask  Bitmask of VP_FLAG_* bits to clear.
