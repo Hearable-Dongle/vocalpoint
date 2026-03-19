@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-<<<<<<< Updated upstream
 # Local imports
-=======
 import sys
 import time
 from pathlib import Path
@@ -14,7 +12,6 @@ for path in (REPO_ROOT, SIGNAL_PROCESSING_ROOT):
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
 
->>>>>>> Stashed changes
 from bt import BT_Interface
 from usb import USB_Interface
 from config import Session_Config
