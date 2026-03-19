@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import struct
+import subprocess
 import time
 from dataclasses import asdict, dataclass
 
@@ -28,7 +30,7 @@ from smbus2 import SMBus, i2c_msg
 VP_FLAG_CHANGED                 = 1 << 0
 VP_FLAG_VOL                     = 1 << 2
 VP_FLAG_VOICE_PROFILE_NUM       = 1 << 3
-VP_FLAG_BLE_UUID_ADDR           = 1 << 4
+VP_FLAG_REBOOT                  = 1 << 4
 VP_FLAG_AUDIO_OUT_NAME          = 1 << 5
 VP_FLAG_WIFI_SSID               = 1 << 6
 VP_FLAG_WIFI_PWD                = 1 << 7
@@ -36,19 +38,27 @@ VP_FLAG_WIFI_PWD                = 1 << 7
 VP_REQ_DATA                     = 1 << 1
 VP_REQ_VOL                      = 1 << 2
 VP_REQ_VOICE_PROFILE_NUM        = 1 << 3
-VP_REQ_BLE_UUID_ADDR            = 1 << 4
 VP_REQ_AUDIO_OUT_NAME           = 1 << 5
 VP_REQ_WIFI_SSID                = 1 << 6
 VP_REQ_WIFI_PWD                 = 1 << 7
 VP_REQ_WRITE                    = 1 << 8
 VP_REQ_WRITE_VOICE_PROFILE      = 1 << 9
+VP_REQ_ACK_REBOOT               = 1 << 10
 VP_REQ_WRITE_AUDIO_OUT_NAME     = VP_REQ_AUDIO_OUT_NAME
 VP_REQ_OFFSET_SHIFT             = 24
 
-VP_PARAM_BITS = (
+VP_FETCH_PARAM_BITS = (
     VP_FLAG_VOL
     | VP_FLAG_VOICE_PROFILE_NUM
-    | VP_FLAG_BLE_UUID_ADDR
+    | VP_FLAG_AUDIO_OUT_NAME
+    | VP_FLAG_WIFI_SSID
+    | VP_FLAG_WIFI_PWD
+)
+VP_STATUS_BITS = (
+    VP_FLAG_CHANGED
+    | VP_FLAG_VOL
+    | VP_FLAG_VOICE_PROFILE_NUM
+    | VP_FLAG_REBOOT
     | VP_FLAG_AUDIO_OUT_NAME
     | VP_FLAG_WIFI_SSID
     | VP_FLAG_WIFI_PWD
@@ -66,7 +76,6 @@ VP_WRITE_MAILBOX_LEN = VP_RESP_MAILBOX_LEN
 PARAM_PAYLOAD_SIZES: dict[int, int] = {
     VP_FLAG_VOL:  1,
     VP_FLAG_VOICE_PROFILE_NUM:  1,
-    VP_FLAG_BLE_UUID_ADDR: 40,
     VP_FLAG_AUDIO_OUT_NAME: 32,
     VP_FLAG_WIFI_SSID:   32,
     VP_FLAG_WIFI_PWD:    32,
@@ -75,7 +84,6 @@ PARAM_PAYLOAD_SIZES: dict[int, int] = {
 PARAM_FLAG_TO_FIELD: dict[int, str] = {
     VP_FLAG_VOL:                "volume",
     VP_FLAG_VOICE_PROFILE_NUM:  "voice_profile_num",
-    VP_FLAG_BLE_UUID_ADDR:      "ble_uuid_addr",
     VP_FLAG_AUDIO_OUT_NAME:     "audio_out_name",
     VP_FLAG_WIFI_SSID:          "wifi_ssid",
     VP_FLAG_WIFI_PWD:           "wifi_pwd",
@@ -110,7 +118,6 @@ AUDIO_OUT_TEST_NAMES = (
 class DeviceState:
     volume: int = 0
     voice_profile_num: int = 0
-    ble_uuid_addr: str = ""
     audio_out_name: str = ""
     wifi_ssid: str = ""
     wifi_pwd: str = ""
@@ -165,7 +172,7 @@ def read_status(bus: SMBus, address: int) -> int:
         _write_request(bus, address, 0x00000000)
         time.sleep(SETTLE_SEC)
         raw = _read_mailbox(bus, address, VP_RESP_MAILBOX_OFFSET, VP_STATUS_LEN)
-        flags = struct.unpack("<I", raw)[0]
+        flags = struct.unpack("<I", raw)[0] & VP_STATUS_BITS
 
         if flags & VP_REQ_DATA:
             last_err = ValueError(f"status read returned param header: 0x{flags:08X}")
@@ -175,6 +182,11 @@ def read_status(bus: SMBus, address: int) -> int:
         return flags
 
     raise last_err  # type: ignore[misc]
+
+
+def ack_reboot_request(bus: SMBus, address: int) -> None:
+    _write_request(bus, address, VP_REQ_ACK_REBOOT)
+    time.sleep(SETTLE_SEC)
 
 
 def read_param(bus: SMBus, address: int, param_bit: int) -> bytes:
@@ -224,8 +236,6 @@ def apply_param(state: DeviceState, param_bit: int, raw: bytes) -> None:
         state.volume = _decode_u8(raw)
     elif param_bit == VP_FLAG_VOICE_PROFILE_NUM:
         state.voice_profile_num = _decode_u8(raw)
-    elif param_bit == VP_FLAG_BLE_UUID_ADDR:
-        state.ble_uuid_addr = _decode_string(raw)
     elif param_bit == VP_FLAG_AUDIO_OUT_NAME:
         state.audio_out_name = _decode_string(raw)
     elif param_bit == VP_FLAG_WIFI_SSID:
@@ -252,6 +262,16 @@ def main() -> int:
         help="Status poll interval in milliseconds (default: 100)",
     )
     parser.add_argument("--json", action="store_true", help="Print decoded state as JSON")
+    parser.add_argument(
+        "--allow-reboot",
+        action="store_true",
+        help="Allow a pending ESP32 reboot request to execute the local reboot command",
+    )
+    parser.add_argument(
+        "--reboot-command",
+        default="sudo systemctl reboot",
+        help="Command to run when --allow-reboot is set (default: 'sudo systemctl reboot')",
+    )
     parser.add_argument(
         "--no-voice-test",
         action="store_true",
@@ -299,14 +319,24 @@ def main() -> int:
 
                 flags = read_status(bus, args.address)
 
+                if flags & VP_FLAG_REBOOT:
+                    print("reboot request received from ESP32")
+                    ack_reboot_request(bus, args.address)
+                    if args.allow_reboot:
+                        print(f"executing reboot command: {args.reboot_command}")
+                        subprocess.Popen(shlex.split(args.reboot_command))
+                        return 0
+                    print("reboot command skipped (run with --allow-reboot to execute it)")
+                    time.sleep(INTER_TRANSACTION_SEC)
+                    continue
+
                 if flags & VP_FLAG_CHANGED:
-                    pending_dirty |= (flags & VP_PARAM_BITS)
+                    pending_dirty |= (flags & VP_FETCH_PARAM_BITS)
 
                 changed = False
                 for param_bit in (
                     VP_FLAG_VOL,
                     VP_FLAG_VOICE_PROFILE_NUM,
-                    VP_FLAG_BLE_UUID_ADDR,
                     VP_FLAG_AUDIO_OUT_NAME,
                     VP_FLAG_WIFI_SSID,
                     VP_FLAG_WIFI_PWD,
@@ -333,7 +363,6 @@ def main() -> int:
                         else:
                             print(
                                 f"volume={state.volume} voice_profile_num={state.voice_profile_num} "
-                                f"ble_uuid_addr='{state.ble_uuid_addr}' "
                                 f"audio_out_name='{state.audio_out_name}' "
                                 f"wifi_ssid='{state.wifi_ssid}' wifi_pwd='{state.wifi_pwd[0:16]}'"
                             )

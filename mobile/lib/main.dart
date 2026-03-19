@@ -917,6 +917,14 @@ class _VocalPointShellState extends State<VocalPointShell> {
     );
   }
 
+  Future<void> _requestRemoteReboot() async {
+    await _writeMetadataToken(
+      'REBOOT=1',
+      showSuccess: true,
+      successMessage: 'Sent REBOOT=1',
+    );
+  }
+
   void _rememberVoiceProfile(String name, int number) {
     final trimmedName = name.trim();
     if (trimmedName.isEmpty) {
@@ -2561,6 +2569,11 @@ class _VocalPointShellState extends State<VocalPointShell> {
               onPressed: () => _syncSelectedOutputToDevice(showSuccess: true),
               icon: const Icon(Icons.route),
               label: const Text('Send output metadata'),
+            ),
+            FilledButton.icon(
+              onPressed: _requestRemoteReboot,
+              icon: const Icon(Icons.restart_alt),
+              label: const Text('Request RPi reboot'),
             ),
           ],
         ),
