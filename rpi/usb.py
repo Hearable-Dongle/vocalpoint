@@ -1,9 +1,10 @@
-"""USB Audio Interface using PyAudio for real-time audio capture."""
-
-import pyaudio
+# Standard imports
+from typing import Optional
 import logging
 import subprocess
-from typing import Optional
+
+# Third-party imports
+import pyaudio
 
 
 class USB_Interface:
@@ -300,6 +301,6 @@ class USB_Interface:
         int
             Number of input channels detected on the USB device
         """
-        
+
         # Return the number of channels detected on the USB device
         return self.__channels
