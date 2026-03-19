@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import shlex
 import struct
 import subprocess
@@ -24,6 +25,7 @@ import time
 from dataclasses import asdict, dataclass
 
 from smbus2 import SMBus, i2c_msg
+from wifi import WifiManager
 
 # ── Protocol constants (must match i2c_protocol.h) ──────────────────────────
 
@@ -114,6 +116,8 @@ AUDIO_OUT_TEST_NAMES = (
     "Bluetooth Speaker"
 )
 
+LOGGER = logging.getLogger("vocalpoint.i2c")
+
 @dataclass
 class DeviceState:
     volume: int = 0
@@ -121,6 +125,20 @@ class DeviceState:
     audio_out_name: str = ""
     wifi_ssid: str = ""
     wifi_pwd: str = ""
+
+
+def _configure_logger() -> logging.Logger:
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    return LOGGER
+
+
+def _normalized_wifi_credentials(state: DeviceState) -> tuple[str, str]:
+    return (state.wifi_ssid.strip(), state.wifi_pwd.strip())
 
 
 def _write_request(bus: SMBus, address: int, flags: int) -> None:
@@ -245,6 +263,7 @@ def apply_param(state: DeviceState, param_bit: int, raw: bytes) -> None:
 
 
 def main() -> int:
+    logger = _configure_logger()
     parser = argparse.ArgumentParser(
         description="Poll ESP32 VocalPoint state over I2C (mailbox protocol)."
     )
@@ -285,7 +304,9 @@ def main() -> int:
     )
 
     state = DeviceState()
+    wifi_manager = WifiManager(logger)
     last_persisted: dict[str, object] | None = None
+    last_wifi_request = ("", "")
     pending_dirty = 0
 
     next_dummy_profile_name_write = time.monotonic()
@@ -356,6 +377,17 @@ def main() -> int:
                     break
 
                 if changed:
+                    current_wifi_request = _normalized_wifi_credentials(state)
+                    if current_wifi_request != last_wifi_request:
+                        last_wifi_request = current_wifi_request
+                        wifi_ssid, wifi_pwd = current_wifi_request
+                        if wifi_ssid and wifi_pwd:
+                            wifi_result = wifi_manager.connect_from_i2c(
+                                wifi_ssid,
+                                wifi_pwd,
+                            )
+                            print(wifi_result)
+
                     current = asdict(state)
                     if current != last_persisted:
                         if args.json:

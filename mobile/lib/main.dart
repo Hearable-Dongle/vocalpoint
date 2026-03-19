@@ -69,6 +69,8 @@ class AppState {
   static final ValueNotifier<int> voiceProfileNum = ValueNotifier<int>(0);
   static final ValueNotifier<List<VoiceProfileChoice>> voiceProfiles =
       ValueNotifier<List<VoiceProfileChoice>>(<VoiceProfileChoice>[]);
+  static final ValueNotifier<String> wifiSsid = ValueNotifier<String>('');
+  static final ValueNotifier<String> wifiPassword = ValueNotifier<String>('');
 
   static final ValueNotifier<String> volumeServiceUuid = ValueNotifier<String>(
     '0000FFFF-0000-1000-8000-00805F9B34FB',
@@ -127,7 +129,7 @@ enum SetupPanel { vocalPoint, output }
 
 enum ControlPanel { volume, mix }
 
-enum ProfileMenuAction { about, systemMetadata, deviceDiagnostics }
+enum ProfileMenuAction { about, connectWifi, systemMetadata, deviceDiagnostics }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -1000,6 +1002,14 @@ class _VocalPointShellState extends State<VocalPointShell> {
       AppState.bleAddress.value = values['BLE_ADDR']!;
     }
 
+    if (values.containsKey('WIFI_SSID')) {
+      AppState.wifiSsid.value = values['WIFI_SSID']!;
+    }
+
+    if (values.containsKey('WIFI_PWD')) {
+      AppState.wifiPassword.value = values['WIFI_PWD']!;
+    }
+
     final announcedOutputName = values['AUDIO_OUT_NAME_SEND'];
     if (announcedOutputName != null) {
       _rememberOutputDeviceName(announcedOutputName);
@@ -1136,6 +1146,8 @@ class _VocalPointShellState extends State<VocalPointShell> {
     switch (action) {
       case ProfileMenuAction.about:
         _showAboutDialog();
+      case ProfileMenuAction.connectWifi:
+        _showConnectWifiDialog();
       case ProfileMenuAction.systemMetadata:
         _showSystemMetadataDialog();
       case ProfileMenuAction.deviceDiagnostics:
@@ -1179,6 +1191,210 @@ class _VocalPointShellState extends State<VocalPointShell> {
       title: 'System and Metadata',
       childBuilder: (dialogContext) => _buildSystemMetadataContent(),
     );
+  }
+
+  void _showWifiConnectionRequiredDialog() {
+    _showOverlayDialog(
+      title: 'Connection Required',
+      childBuilder: (dialogContext) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Not connected to VocalPoint device yet. Please connect to a VocalPoint device to use this feature.',
+            style: TextStyle(color: AppColors.white, height: 1.5),
+          ),
+          const SizedBox(height: 18),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Close'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool> _saveWifiCredentials(
+    String ssid,
+    String password, {
+    bool showSuccess = true,
+  }) async {
+    if (!_hasConnectedVocalPoint) {
+      _showWifiConnectionRequiredDialog();
+      return false;
+    }
+
+    final trimmedSsid = ssid.trim();
+    final trimmedPassword = password.trim();
+
+    if (trimmedSsid.isEmpty) {
+      _showToast('Enter a Wi-Fi network name');
+      return false;
+    }
+
+    if (trimmedPassword.isEmpty) {
+      _showToast('Enter a Wi-Fi password');
+      return false;
+    }
+
+    AppState.wifiSsid.value = trimmedSsid;
+    AppState.wifiPassword.value = trimmedPassword;
+    await _writeMetadataToken('WIFI_SSID=$trimmedSsid', showSuccess: false);
+    await _writeMetadataToken('WIFI_PWD=$trimmedPassword', showSuccess: false);
+
+    if (showSuccess) {
+      _showToast('Saved Wi-Fi credentials');
+    }
+    return true;
+  }
+
+  Future<void> _showConnectWifiDialog() async {
+    if (!_hasConnectedVocalPoint) {
+      _showWifiConnectionRequiredDialog();
+      return;
+    }
+
+    final ssidController = TextEditingController(text: AppState.wifiSsid.value);
+    final passwordController = TextEditingController(
+      text: AppState.wifiPassword.value,
+    );
+    var obscurePassword = true;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 24,
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.panelSoft,
+                    borderRadius: BorderRadius.circular(28),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.10),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.35),
+                        blurRadius: 30,
+                        offset: const Offset(0, 18),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Connect to Wi-Fi',
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.of(dialogContext).pop(),
+                              icon: const Icon(Icons.close),
+                              tooltip: 'Close',
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Enter the Raspberry Pi Wi-Fi network name and password. These values are saved in the app and sent to the connected VocalPoint device.',
+                          style: TextStyle(color: AppColors.muted, height: 1.5),
+                        ),
+                        const SizedBox(height: 18),
+                        TextField(
+                          controller: ssidController,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'Network name',
+                            hintText: 'Example: HomeWiFi',
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: passwordController,
+                          obscureText: obscurePassword,
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) async {
+                            final saved = await _saveWifiCredentials(
+                              ssidController.text,
+                              passwordController.text,
+                            );
+                            if (saved && dialogContext.mounted) {
+                              Navigator.of(dialogContext).pop();
+                            }
+                          },
+                          decoration: InputDecoration(
+                            labelText: 'Password',
+                            suffixIcon: IconButton(
+                              onPressed: () {
+                                setDialogState(() {
+                                  obscurePassword = !obscurePassword;
+                                });
+                              },
+                              icon: Icon(
+                                obscurePassword
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(
+                              onPressed: () => Navigator.of(dialogContext).pop(),
+                              child: const Text('Cancel'),
+                            ),
+                            const SizedBox(width: 8),
+                            FilledButton(
+                              onPressed: () async {
+                                final saved = await _saveWifiCredentials(
+                                  ssidController.text,
+                                  passwordController.text,
+                                );
+                                if (saved && dialogContext.mounted) {
+                                  Navigator.of(dialogContext).pop();
+                                }
+                              },
+                              child: const Text('Save'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    ssidController.dispose();
+    passwordController.dispose();
   }
 
   void _showDeviceDiagnosticsDialog() {
@@ -1490,6 +1706,10 @@ class _VocalPointShellState extends State<VocalPointShell> {
                 PopupMenuItem(
                   value: ProfileMenuAction.about,
                   child: Text('About'),
+                ),
+                PopupMenuItem(
+                  value: ProfileMenuAction.connectWifi,
+                  child: Text('Connect to Wi-Fi'),
                 ),
                 PopupMenuItem(
                   value: ProfileMenuAction.systemMetadata,
