@@ -4,8 +4,8 @@ import logging
 import threading
 
 # Local imports
-from .bt import BT_Interface
-from .usb import USB_Interface
+from bt import BT_Interface
+from usb import USB_Interface
 
 
 class Audio_Interface():
