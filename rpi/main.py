@@ -1,18 +1,40 @@
 #!/usr/bin/env python3
-# Local imports
-from bt import BT_Interface
-from config import Session_Config
-from i2c import I2C_Interface
 
 import time
 
+from bt import BT_Interface
+from config import Session_Config
+from i2c import I2C_Interface
+from wifi import WifiManager
+
+
+def _normalized_wifi_request(i2c: I2C_Interface) -> tuple[str, str]:
+    return (i2c.get_wifi_ssid().strip(), i2c.get_wifi_pwd().strip())
+
+
+def _handle_wifi_updates(
+    i2c: I2C_Interface,
+    wifi: WifiManager,
+    logger,
+    last_wifi_request: tuple[str, str],
+) -> tuple[str, str]:
+    current_wifi_request = _normalized_wifi_request(i2c)
+    if current_wifi_request == last_wifi_request:
+        return last_wifi_request
+
+    wifi_ssid, wifi_pwd = current_wifi_request
+    if wifi_ssid and wifi_pwd:
+        result = wifi.connect_from_i2c(wifi_ssid, wifi_pwd)
+        logger.info(result)
+        print(result)
+
+    return current_wifi_request
+
 
 def main() -> int:
-    # Load session configuration
     cfg = Session_Config()
-
-    # Create Bluetooth interface with logger
     bt = BT_Interface(cfg.logger)
+    wifi = WifiManager(cfg.logger, "wlan0")
 
     i2c = I2C_Interface(
         autostart=True,
@@ -20,30 +42,46 @@ def main() -> int:
     )
     print(i2c.get_state())
 
-    # Initialize Bluetooth interface
+    last_wifi_request = ("", "")
+
     assert bt.power_off()
     assert bt.power_on()
     assert bt.agent_on()
 
-    while(True):
+    while True:
         try:
-            # Scan for devices and connect to configured sink
-            devices = bt.scan(duration = 15) # 15 seconds was found to be the minimum time required
+            last_wifi_request = _handle_wifi_updates(
+                i2c,
+                wifi,
+                cfg.logger,
+                last_wifi_request,
+            )
+
+            devices = bt.scan(duration=15)
 
             write_device_count = 3
-
-            for count in range(write_device_count):
+            for _ in range(write_device_count):
                 for device in devices.values():
                     i2c.write_audio_out_name(device)
                     print(f"Found device: {device}")
                     time.sleep(0.3)
-                count += 1
+                    last_wifi_request = _handle_wifi_updates(
+                        i2c,
+                        wifi,
+                        cfg.logger,
+                        last_wifi_request,
+                    )
 
             while i2c.get_audio_out_name() == "":
                 time.sleep(0.3)
+                last_wifi_request = _handle_wifi_updates(
+                    i2c,
+                    wifi,
+                    cfg.logger,
+                    last_wifi_request,
+                )
 
             device_name = i2c.get_audio_out_name()
-
             print(f"Device name from app: {device_name}")
 
             address = next(
@@ -62,17 +100,19 @@ def main() -> int:
 
             print(f"Connected to {device_name} with address {address}")
 
-            while(True):
+            while True:
                 time.sleep(1)
+                last_wifi_request = _handle_wifi_updates(
+                    i2c,
+                    wifi,
+                    cfg.logger,
+                    last_wifi_request,
+                )
 
         except KeyboardInterrupt:
+            i2c.stop()
             return 0
 
-    # assert cfg.sink in devices
 
-    # Print Bluetooth sink information
-    print(bt.info(cfg.sink))
-
-# Script entry point
 if __name__ == "__main__":
     raise SystemExit(main())

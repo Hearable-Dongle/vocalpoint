@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import shlex
 import struct
 import subprocess
@@ -26,7 +25,6 @@ import time
 from dataclasses import asdict, dataclass, replace
 
 from smbus2 import SMBus, i2c_msg
-from wifi import WifiManager
 
 # ── Protocol constants (must match i2c_protocol.h) ──────────────────────────
 
@@ -116,8 +114,6 @@ AUDIO_OUT_TEST_NAMES = (
     "Bluetooth Speaker",
 )
 
-LOGGER = logging.getLogger("vocalpoint.i2c")
-
 @dataclass
 class DeviceState:
     volume: int = 0
@@ -125,20 +121,6 @@ class DeviceState:
     audio_out_name: str = ""
     wifi_ssid: str = ""
     wifi_pwd: str = ""
-
-
-def _configure_logger() -> logging.Logger:
-    if not logging.getLogger().handlers:
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-    return LOGGER
-
-
-def _normalized_wifi_credentials(state: DeviceState) -> tuple[str, str]:
-    return (state.wifi_ssid.strip(), state.wifi_pwd.strip())
 
 
 def _write_request(bus: SMBus, address: int, flags: int) -> None:
@@ -290,7 +272,6 @@ class I2C_Interface:
         self._state_lock = threading.Lock()
         self._pending_dirty = 0
         self._last_persisted: dict[str, object] | None = None
-
         self._bus = SMBus(self.bus_num)
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -308,7 +289,7 @@ class I2C_Interface:
             self._bus.close()
             self._bus = None
 
-    def __enter__(self) -> "I2C":
+    def __enter__(self) -> "I2C_Interface":
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -467,7 +448,6 @@ class I2C_Interface:
 
 
 def main() -> int:
-    logger = _configure_logger()
     parser = argparse.ArgumentParser(
         description="Poll ESP32 VocalPoint state over I2C (mailbox protocol)."
     )
@@ -527,115 +507,6 @@ def main() -> int:
         controller.stop()
 
     return 0
-    state = DeviceState()
-    wifi_manager = WifiManager(logger)
-    last_persisted: dict[str, object] | None = None
-    last_wifi_request = ("", "")
-    pending_dirty = 0
-
-    next_dummy_profile_name_write = time.monotonic()
-    next_dummy_profile_name_index = 0
-
-    next_dummy_audio_out_write = time.monotonic()
-    next_dummy_audio_out_index = 0
-
-    with SMBus(args.bus) as bus:
-        while True:
-            cycle_start = time.monotonic()
-            try:
-                now = time.monotonic()
-                if not args.no_voice_test:
-                    if now >= next_dummy_audio_out_write:
-                        audio_out_name = AUDIO_OUT_TEST_NAMES[next_dummy_audio_out_index % len(AUDIO_OUT_TEST_NAMES)]
-                        announce_audio_out_name(bus, args.address, audio_out_name)
-                        print(f"audio_out_announce='{audio_out_name}'")
-                        next_dummy_audio_out_index += 1
-                        next_dummy_audio_out_write = now + AUDIO_OUT_INTERVAL_SEC
-
-                    if now >= next_dummy_profile_name_write:
-                        voice_name = VOICE_TEST_NAMES[next_dummy_profile_name_index % len(VOICE_TEST_NAMES)]
-                        write_voice_profile_name(bus, args.address, voice_name)
-                        print(f"voice_write='{voice_name}'")
-                        next_dummy_profile_name_index += 1
-                        next_dummy_profile_name_write = now + VOICE_PROFILE_INTERVAL_SEC
-
-
-                    time.sleep(SETTLE_SEC)
-
-                flags = read_status(bus, args.address)
-
-                if flags & VP_FLAG_REBOOT:
-                    print("reboot request received from ESP32")
-                    ack_reboot_request(bus, args.address)
-                    if args.allow_reboot:
-                        print(f"executing reboot command: {args.reboot_command}")
-                        subprocess.Popen(shlex.split(args.reboot_command))
-                        return 0
-                    print("reboot command skipped (run with --allow-reboot to execute it)")
-                    time.sleep(INTER_TRANSACTION_SEC)
-                    continue
-
-                if flags & VP_FLAG_CHANGED:
-                    pending_dirty |= (flags & VP_FETCH_PARAM_BITS)
-
-                changed = False
-                for param_bit in (
-                    VP_FLAG_VOL,
-                    VP_FLAG_VOICE_PROFILE_NUM,
-                    VP_FLAG_AUDIO_OUT_NAME,
-                    VP_FLAG_WIFI_SSID,
-                    VP_FLAG_WIFI_PWD,
-                ):
-                    if not (pending_dirty & param_bit):
-                        continue
-
-                    try:
-                        raw = read_param(bus, args.address, param_bit)
-                        apply_param(state, param_bit, raw)
-                        pending_dirty &= ~param_bit
-                        changed = True
-                    except (ValueError, OSError) as exc:
-                        field_name = PARAM_FLAG_TO_FIELD.get(param_bit, f"0x{param_bit:02X}")
-                        print(f"param fetch error ({field_name}): {exc}")
-
-                    break
-
-                if changed:
-                    current_wifi_request = _normalized_wifi_credentials(state)
-                    if current_wifi_request != last_wifi_request:
-                        last_wifi_request = current_wifi_request
-                        wifi_ssid, wifi_pwd = current_wifi_request
-                        if wifi_ssid and wifi_pwd:
-                            wifi_result = wifi_manager.connect_from_i2c(
-                                wifi_ssid,
-                                wifi_pwd,
-                            )
-                            print(wifi_result)
-
-                    current = asdict(state)
-                    if current != last_persisted:
-                        if args.json:
-                            print(json.dumps(current, separators=(",", ":")))
-                        else:
-                            print(
-                                f"volume={state.volume} voice_profile_num={state.voice_profile_num} "
-                                f"audio_out_name='{state.audio_out_name}' "
-                                f"wifi_ssid='{state.wifi_ssid}' wifi_pwd='{state.wifi_pwd[0:16]}'"
-                            )
-                        last_persisted = current
-
-            except KeyboardInterrupt:
-                print("\nStopped.")
-                return 0
-            except OSError as exc:
-                print(f"I2C error: {exc}")
-            except Exception as exc:
-                print(f"unexpected error: {exc}")
-
-            elapsed = time.monotonic() - cycle_start
-            remaining = args.interval_ms / 1000.0 - elapsed
-            if remaining > 0:
-                time.sleep(remaining)
 
 
 if __name__ == "__main__":
