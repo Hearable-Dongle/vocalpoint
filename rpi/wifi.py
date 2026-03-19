@@ -79,6 +79,12 @@ class WifiManager:
                 networks.append(ssid)
 
         self.__logger.info(f"Scanned {len(networks)} Wi-Fi networks on {self.ifname}")
+        if networks:
+            self.__logger.info(
+                "Available Wi-Fi networks:\n" + textwrap.indent("\n".join(networks), "\t")
+            )
+        else:
+            self.__logger.info("Available Wi-Fi networks: none found")
         return networks
 
     def connect_from_i2c(self, ssid: str, password: str) -> str:
