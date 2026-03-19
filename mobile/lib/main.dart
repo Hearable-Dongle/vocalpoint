@@ -1251,26 +1251,6 @@ class _VocalPointShellState extends State<VocalPointShell> {
     return true;
   }
 
-  Future<void> _submitWifiCredentials(
-    BuildContext dialogContext,
-    TextEditingController ssidController,
-    TextEditingController passwordController,
-  ) async {
-    final saved = await _saveWifiCredentials(
-      ssidController.text,
-      passwordController.text,
-    );
-    if (!saved || !dialogContext.mounted) {
-      return;
-    }
-
-    FocusScope.of(dialogContext).unfocus();
-    await Future<void>.delayed(Duration.zero);
-    if (dialogContext.mounted) {
-      Navigator.of(dialogContext).pop();
-    }
-  }
-
   Future<void> _showConnectWifiDialog() async {
     if (!_hasConnectedVocalPoint) {
       _showWifiConnectionRequiredDialog();
@@ -1354,11 +1334,8 @@ class _VocalPointShellState extends State<VocalPointShell> {
                           controller: passwordController,
                           obscureText: obscurePassword,
                           textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => _submitWifiCredentials(
-                            dialogContext,
-                            ssidController,
-                            passwordController,
-                          ),
+                          onSubmitted: (_) =>
+                              FocusScope.of(dialogContext).unfocus(),
                           decoration: InputDecoration(
                             labelText: 'Password',
                             suffixIcon: IconButton(
@@ -1385,11 +1362,15 @@ class _VocalPointShellState extends State<VocalPointShell> {
                             ),
                             const SizedBox(width: 8),
                             FilledButton(
-                              onPressed: () => _submitWifiCredentials(
-                                dialogContext,
-                                ssidController,
-                                passwordController,
-                              ),
+                              onPressed: () async {
+                                final saved = await _saveWifiCredentials(
+                                  ssidController.text,
+                                  passwordController.text,
+                                );
+                                if (saved && dialogContext.mounted) {
+                                  Navigator.of(dialogContext).pop();
+                                }
+                              },
                               child: const Text('Save'),
                             ),
                           ],
