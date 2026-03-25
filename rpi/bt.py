@@ -1097,7 +1097,7 @@ class BT_Interface:
     
     def __get_pulseaudio_sink(self, mac: str) -> str:
         """
-        Get the PulseAudio sink name for a Bluetooth device.
+        Get the PulseAudio sink name for a Bluetooth device with retry logic.
         
         Parameters
         ----------
@@ -1113,46 +1113,95 @@ class BT_Interface:
         # Set return value to None by default in case of failure
         sink_name = None
 
+        # Retry parameters
+        max_retries = 30
+        retry_delay = 0.5  # 500ms between retries (15 seconds total)
+
         # Attempt to query PulseAudio for the sink corresponding to the Bluetooth device
         try:
-            # Query PulseAudio daemon for all available sinks
-            result = subprocess.run(
-                ['pactl', 'list', 'sinks'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
+            # Normalize MAC address to match PulseAudio/PipeWire naming (case-insensitive)
+            mac_normalized = mac.replace(':', '_').lower()
             
-            # Check if pactl command executed successfully
-            if result.returncode != 0:
-                # Log error output from pactl command for debugging
-                self.__logger.error(f"pactl error: {result.stderr}")
-            
-            else:
-                # Normalize MAC address to match PulseAudio format
-                mac_normalized = mac.replace(':', '_')
+            # Retry loop to wait for PulseAudio to create the sink
+            for attempt in range(max_retries):
+                # Query short sink list for stable machine-parsable output
+                sink_result = subprocess.run(
+                    ['pactl', 'list', 'short', 'sinks'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
                 
-                # Parse pactl output to find matching Bluetooth sink
-                for line in result.stdout.split('\n'):
-                    # Remove leading/trailing whitespace for easier parsing
-                    line = line.strip()
+                # Check if pactl command executed successfully
+                if sink_result.returncode != 0:
+                    # Log error output from pactl command for debugging
+                    self.__logger.error(f"pactl error listing sinks: {sink_result.stderr}")
                     
-                    # Look for Name field in sink properties
-                    if line.startswith('Name:'):
-                        # Extract sink name
-                        name = line.split('Name:', 1)[1].strip()
-                        
-                        # Check if this is a Bluetooth sink containing our device's MAC address
-                        if 'bluez' in name.lower() and mac_normalized in name:
-                            # Log that matching PulseAudio sink was found for the device
-                            self.__logger.info(f"Found PulseAudio sink: {name}")
+                else:
+                    # Parse pactl output to find matching Bluetooth sink
+                    for line in sink_result.stdout.splitlines():
+                        parts = line.split('\t')
+                        if len(parts) < 2:
+                            continue
 
-                            # Set matching sink for this device and break from loop
+                        name = parts[1].strip()
+
+                        # Match bluez sink by normalized MAC token regardless of case
+                        if 'bluez' in name.lower() and mac_normalized in name.lower():
+                            self.__logger.info(f"Found PulseAudio sink: {name}")
                             sink_name = name
                             break
-                else:
-                    # Log warning with all available sinks for debugging
-                    self.__logger.warning(f"No PulseAudio sink found for {mac}. Available sinks:\n{result.stdout}")
+                    
+                    # If sink was found, break from retry loop
+                    if sink_name:
+                        break
+
+                    # If no sink yet, try forcing the bluez card profile to A2DP sink.
+                    card_result = subprocess.run(
+                        ['pactl', 'list', 'short', 'cards'],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+
+                    if card_result.returncode == 0:
+                        for line in card_result.stdout.splitlines():
+                            parts = line.split('\t')
+                            if len(parts) < 2:
+                                continue
+
+                            card_name = parts[1].strip()
+                            card_name_l = card_name.lower()
+                            if 'bluez_card' in card_name_l and mac_normalized in card_name_l:
+                                # PipeWire profile names differ by distro/version.
+                                # Try the most common A2DP profile ids before giving up.
+                                profile_candidates = [
+                                    'a2dp-sink',
+                                    'a2dp-sink-sbc',
+                                    'a2dp_sink',
+                                    'a2dp-sink-sbc_xq',
+                                ]
+
+                                for profile in profile_candidates:
+                                    profile_result = subprocess.run(
+                                        ['pactl', 'set-card-profile', card_name, profile],
+                                        capture_output=True,
+                                        text=True,
+                                        timeout=5
+                                    )
+                                    if profile_result.returncode == 0:
+                                        self.__logger.info(
+                                            f"Requested card profile {profile} for {card_name}"
+                                        )
+                                        break
+                
+                # Wait before retrying (except on last attempt)
+                if attempt < max_retries - 1 and not sink_name:
+                    time.sleep(retry_delay)
+            
+            # Log warning if sink was not found after all retries
+            if not sink_name:
+                self.__logger.warning(f"No PulseAudio sink found for {mac} after {max_retries} retries")
         
         # Catch FileNotFoundError if pactl command is not found and log it with context
         except FileNotFoundError:

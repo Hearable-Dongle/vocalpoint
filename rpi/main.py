@@ -97,7 +97,7 @@ def main() -> int:
     try:
         # Schedule main loop to run every IDLE_SLEEP_SEC milliseconds
         # This is non-blocking - D-Bus events and audio streaming can process between iterations
-        GLib.timeout_add(int(500 * 1000), main_loop_callback)
+        GLib.timeout_add(500, main_loop_callback)
 
         # Create and run the main GLib event loop
         # This will:
@@ -116,7 +116,7 @@ def main() -> int:
         return 0
     finally:
         audio.stop()
-        i2c.stop()
+        # i2c.stop()
 
 
 if __name__ == "__main__":
