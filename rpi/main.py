@@ -3,7 +3,7 @@ import time
 from gi.repository import GLib
 
 from bt import BT_Interface
-from audio import Audio_Interface
+from stream import Stream_Interface
 from usb import USB_Interface
 from config import Session_Config
 from i2c import I2C_Interface
@@ -42,7 +42,7 @@ def main() -> int:
     bt = BT_Interface(cfg.logger)
     usb = USB_Interface(cfg.logger, cfg.source, cfg.fs, cfg.frame)
     # i2c = I2C_Interface(autostart=True, enable_voice_test=False, emit_logs=True)
-    audio = Audio_Interface(bt, usb, cfg.logger, channels=6)
+    stream = Stream_Interface(bt, usb, cfg.logger, channels=6)
 
     # Configure Bluetooth interface
     assert bt.power_off()
@@ -79,8 +79,8 @@ def main() -> int:
         assert bt.connect(cfg.sink, cfg.fs)
         cfg.logger.info(f"Connected device: {info['Name']}")
 
-    # Start audio streaming in background thread
-    audio.start(audio_callback)
+    # Start streaming in background thread
+    stream.start(audio_callback)
 
     try:
         # Schedule main loop to run periodically
@@ -102,7 +102,7 @@ def main() -> int:
 
     finally:
         # Ensure all interfaces are stopped and Bluetooth is disconnected on exit
-        if not audio.stop() or not usb.stop() or not bt.disconnect():
+        if not stream.stop() or not usb.stop() or not bt.disconnect():
             # Log if any interface did not stop cleanly
             cfg.logger.warning("One or more interfaces did not stop cleanly")
 

@@ -8,7 +8,7 @@ from bt import BT_Interface
 from usb import USB_Interface
 
 
-class Audio_Interface():
+class Stream_Interface():
     """
     Interface managing the audio streaming from USB input to Bluetooth output.
     """
@@ -21,7 +21,7 @@ class Audio_Interface():
         channels: int
     ) -> None:
         """
-        Initialize audio interface.
+        Initialize stream interface.
         
         Parameters
         ----------
@@ -30,7 +30,7 @@ class Audio_Interface():
         usb_interface : USB_Interface
             USB interface for capturing audio frames from the configured source
         logger : logging.Logger
-            Logger instance for recording audio events and errors
+            Logger instance for recording stream events and errors
         channels : int
             Number of audio channels to process (e.g. 1 for mono, 2 for stereo)
 
@@ -53,7 +53,7 @@ class Audio_Interface():
 
     def __stream_audio(self):
         """
-        Background audio streaming loop
+        Background streaming loop
         
         Parameters
         ----------
@@ -89,7 +89,7 @@ class Audio_Interface():
         # Catch any exceptions that occur during streaming to prevent thread from crashing
         except Exception as e:
             # Log the failure in the streaming process
-            self.__logger.error(f"Error in audio streaming thread: {e}")
+            self.__logger.error(f"Error in streaming thread: {e}")
 
         finally:
             # Ensure running flag is cleared if thread exits due to exception
@@ -97,7 +97,7 @@ class Audio_Interface():
     
     def start(self, callback: Callable[[bytes, int], bytes]) -> bool:
         """
-        Start audio streaming in background thread
+        Start streaming in background thread
         
         Parameters
         ----------
@@ -129,22 +129,22 @@ class Audio_Interface():
             self.__thread.start()
 
             # Log start of streaming after thread has been initiated to ensure accurate timing
-            self.__logger.info("Audio streaming started")
+            self.__logger.info("Streaming started")
 
             # Set return code to True if streaming started successfully
             ret_code = True
 
         else:
             # Log warning if start is called while already running, but do not raise exception
-            self.__logger.warning("Audio streaming is already running")
+            self.__logger.warning("Streaming is already running")
 
         # Return the status of the start operation
         return ret_code
     
     def stop(self) -> bool:
         """
-        Stop audio streaming thread
-        
+        Stop streaming thread
+
         Parameters
         ----------
         None
@@ -169,18 +169,18 @@ class Audio_Interface():
                 self.__thread.join(timeout=1.0)
 
                 # Log stop of streaming after thread has been signaled to stop 
-                self.__logger.info("Audio streaming stopped")
+                self.__logger.info("Streaming stopped")
 
                 # Set return code to True if streaming stopped successfully
                 ret_code = True
             
             else:
                 # Log warning if thread was not started, but do not raise exception
-                self.__logger.warning("Audio streaming thread was not started")
+                self.__logger.warning("Streaming thread was not started")
 
         else:
             # Log warning if stop is called while not running, but do not raise exception
-            self.__logger.warning("Audio streaming is not running")
+            self.__logger.warning("Streaming is not running")
 
         # Return the status of the stop operation
         return ret_code
@@ -188,8 +188,8 @@ class Audio_Interface():
     @property
     def running(self) -> bool:
         """
-        Return running status of audio streaming thread
-        
+        Return running status of streaming thread
+
         Parameters
         ----------
         None
@@ -206,7 +206,7 @@ class Audio_Interface():
     @property
     def hardfault(self) -> bool:
         """
-        Return hardfault status of audio interface
+        Return hardfault status of stream interface
         
         Parameters
         ----------
