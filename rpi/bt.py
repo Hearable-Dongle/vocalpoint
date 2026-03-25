@@ -1,6 +1,6 @@
 # Standard imports
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 import logging
 import re
 import subprocess
@@ -9,6 +9,7 @@ import time
 
 # Third-party imports
 from dbus.mainloop.glib import DBusGMainLoop, threads_init
+from gi.repository import GLib
 import dbus
 import dbus.service
 
@@ -48,6 +49,11 @@ class BT_Interface:
         # Define hardfault flag and error tracking
         self.__hardfault: bool = False
         self.__consecutive_failures: int = 0
+        
+        # Async sink discovery state
+        self.__sink_found: Optional[str] = None
+        self.__sink_search_active: bool = False
+        self.__sink_signal_match = None
         
         # Initialize D-Bus event loop for asynchronous operations
         DBusGMainLoop(set_as_default=True)
@@ -1095,9 +1101,152 @@ class BT_Interface:
             # Return the result of the audio write attempt
             return ret_code
     
+    def __check_sink_with_glib(self, *args, **kwargs) -> None:
+        """
+        Check for PulseAudio sink asynchronously via GLib during PipeWire object changes.
+        
+        Parameters
+        ----------
+        *args : tuple
+            Variable arguments from D-Bus signal
+        **kwargs : dict
+            Keyword arguments from D-Bus signal
+        
+        Returns
+        -------
+        None
+        """
+        # Log that a PipeWire change was detected
+        self.__logger.debug("PipeWire configuration change detected, checking for sink")
+
+        # Try to query PulseAudio sinks and find the one corresponding to our Bluetooth device
+        try:
+            # Query PulseAudio sinks
+            sink_result = subprocess.run(
+                ['pactl', 'list', 'short', 'sinks'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+                
+            # Check if pactl command executed successfully
+            if sink_result.returncode == 0:
+                # Parse pactl output to find matching Bluetooth sink
+                for line in sink_result.stdout.splitlines():
+                    # Parse line into parts and check if it contains a sink name
+                    parts = line.split('\t')
+                    if len(parts) < 2:
+                        continue
+                    name = parts[1].strip()
+
+                    # Match bluez sink by normalized MAC token regardless of case
+                    if 'bluez' in name.lower() and self.__mac_normalized in name.lower():
+                        # Log that we found the sink with context about the sink name
+                        self.__logger.info(f"Found PulseAudio sink via async check: {name}")
+
+                        # Store the found sink name
+                        self.__sink_found = name
+
+                        # Stop the search for the sink
+                        self.__sink_search_active = False
+
+                        # Break out of loop since we found the sink we were looking for
+                        break
+                
+        except Exception as e:
+            # Log any errors during async sink check
+            self.__logger.debug(f"Error checking sink asynchronously: {str(e)}")
+
+            # Stop the search for the sink to avoid infinite searching in case of errors
+            self.__sink_search_active = False
+    
+    def __setup_sink_listener_and_wait(self, mac: str, timeout_ms: int = 15000) -> Optional[str]:
+        """
+        Set up D-Bus signal listener for PipeWire sink creation and wait for sink.
+        
+        Parameters
+        ----------
+        mac : str
+            Bluetooth device MAC address
+        timeout_ms : int
+            Maximum time to wait for sink creation in milliseconds (default 15 seconds)
+            
+        Returns
+        -------
+        Optional[str]
+            Sink name if found, None if timeout or error occurs
+        """    
+        # Store normalized MAC for use in signal handler
+        self.__mac_normalized = mac.replace(':', '_').lower()
+        self.__sink_found = None
+        self.__sink_search_active = True
+        self.__sink_signal_match = None
+        
+        try:
+            # Add signal handler for property changes so sink discovery is event-driven.
+            self.__sink_signal_match = self.__bus.add_signal_receiver(
+                self.__check_sink_with_glib,
+                signal_name='PropertiesChanged',
+                dbus_interface='org.freedesktop.DBus.Properties'
+            )
+            
+            # Log that async listener is set up
+            self.__logger.info("Set up async D-Bus listener for sink creation")
+
+            # Run one immediate check in case the sink already exists.
+            self.__check_sink_with_glib()
+
+            if self.__sink_found:
+                # Log that sink was found immediately without waiting
+                self.__logger.info("Sink found immediately without waiting")
+            
+            else:
+                # Wait for sink to be found or timeout
+                ctx = GLib.MainContext.default()
+                deadline = time.time() + (timeout_ms / 1000.0)
+                
+                while self.__sink_search_active and time.time() < deadline:
+                    # Process pending D-Bus signals and timers in non-blocking iteration
+                    ctx.iteration(False)
+
+                    # Break out of loop if search finished to stop waiting
+                    if not self.__sink_search_active:
+                        break
+                    
+                    # Small sleep to avoid busy-waiting
+                    time.sleep(0.05)
+                
+                # Check if sink was found
+                if self.__sink_found:
+                    # Log that sink was found successfully
+                    elapsed_sec = max(0.0, (timeout_ms / 1000.0) - max(0.0, deadline - time.time()))
+                    self.__logger.info(f"Sink found in {elapsed_sec:.3f}s")
+                else:
+                    # Log that no sink was found
+                    self.__logger.warning(f"No sink found within {timeout_ms} ms")
+            
+        except Exception as e:
+            # Log error and clean up
+            self.__logger.error(f"Error setting up async sink listener: {str(e)}")
+
+            # Ensure we stop searching for the sink in case of error
+            self.__sink_search_active = False
+
+        finally:
+            # Remove signal subscription for this discovery attempt.
+            if self.__sink_signal_match is not None:
+                try:
+                    self.__sink_signal_match.remove()
+                except Exception:
+                    pass
+                self.__sink_signal_match = None
+
+            # Return the result of the sink query attempt
+            return self.__sink_found
+    
     def __get_pulseaudio_sink(self, mac: str) -> str:
         """
-        Get the PulseAudio sink name for a Bluetooth device.
+        Get the PulseAudio sink name for a Bluetooth device using async D-Bus signal listening.
         
         Parameters
         ----------
@@ -1113,48 +1262,20 @@ class BT_Interface:
         # Set return value to None by default in case of failure
         sink_name = None
 
-        # Attempt to query PulseAudio for the sink corresponding to the Bluetooth device
+        # Attempt to use async D-Bus listener for sink creation
         try:
-            # Query PulseAudio daemon for all available sinks
-            result = subprocess.run(
-                ['pactl', 'list', 'sinks'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
+            # Use async listener to wait for sink (max 15 seconds)
+            sink_name = self.__setup_sink_listener_and_wait(mac, timeout_ms=15000)
             
-            # Check if pactl command executed successfully
-            if result.returncode != 0:
-                # Log error output from pactl command for debugging
-                self.__logger.error(f"pactl error: {result.stderr}")
-            
+            # Check if sink was found
+            if sink_name:
+                # Log that sink was found successfully
+                self.__logger.info(f"Successfully found sink via async discovery: {sink_name}")
             else:
-                # Normalize MAC address to match PulseAudio format
-                mac_normalized = mac.replace(':', '_')
-                
-                # Parse pactl output to find matching Bluetooth sink
-                for line in result.stdout.split('\n'):
-                    # Remove leading/trailing whitespace for easier parsing
-                    line = line.strip()
-                    
-                    # Look for Name field in sink properties
-                    if line.startswith('Name:'):
-                        # Extract sink name
-                        name = line.split('Name:', 1)[1].strip()
-                        
-                        # Check if this is a Bluetooth sink containing our device's MAC address
-                        if 'bluez' in name.lower() and mac_normalized in name:
-                            # Log that matching PulseAudio sink was found for the device
-                            self.__logger.info(f"Found PulseAudio sink: {name}")
-
-                            # Set matching sink for this device and break from loop
-                            sink_name = name
-                            break
-                else:
-                    # Log warning with all available sinks for debugging
-                    self.__logger.warning(f"No PulseAudio sink found for {mac}. Available sinks:\n{result.stdout}")
+                # Log that sink was not found
+                self.__logger.warning(f"No PulseAudio sink found for {mac} via async discovery")
         
-        # Catch FileNotFoundError if pactl command is not found and log it with context
+        # Catch FileNotFoundError if pactl command is not found
         except FileNotFoundError:
             # Log that pactl command is missing
             self.__logger.error("pactl command not found. Install pulseaudio-utils.")
@@ -1162,15 +1283,10 @@ class BT_Interface:
             # Mark as hardfault since we cannot route audio without pactl
             self.__hardfault = True
 
-        # Catch subprocess.TimeoutExpired if pactl takes too long to respond
-        except subprocess.TimeoutExpired:
-            # Log that pactl command timed out
-            self.__logger.error("pactl command timed out")
-
-        # Catch any other exceptions that may occur during the pactl query
+        # Catch any other exceptions that may occur
         except Exception as e:
-            # Log any unexpected errors that occur during the pactl query
-            self.__logger.error(f"Error querying PulseAudio sinks: {str(e)}")
+            # Log any unexpected errors that occur during async sink discovery
+            self.__logger.error(f"Error in async sink discovery: {str(e)}")
         
         finally:
             # Return the result of the sink query attempt

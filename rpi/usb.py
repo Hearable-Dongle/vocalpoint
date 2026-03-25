@@ -85,7 +85,7 @@ class USB_Interface:
                 device_name = info['name']
                 
                 # Check if name matches the configured source
-                if self.__source in device_name or device_name in self.__source:
+                if self.__source in device_name.lower() or device_name.lower() in self.__source:
                     # Log found device
                     self.__logger.info(f"Found USB device at index {idx}: {device_name}")
 
