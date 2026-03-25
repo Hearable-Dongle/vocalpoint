@@ -8,6 +8,8 @@ cd "$SCRIPT_DIR"
 echo "Checking dependencies..."
 REQUIRED_CMDS=("pactl" "bluetoothd" "pkill" "sudo")
 MISSING=()
+PY_MODULES=("dbus" "pyaudio" "numpy" "scipy" "pydantic" "pyrnnoise")
+MISSING_PY=()
 
 for cmd in "${REQUIRED_CMDS[@]}"; do
     if ! command -v "$cmd" &> /dev/null; then
@@ -15,17 +17,22 @@ for cmd in "${REQUIRED_CMDS[@]}"; do
     fi
 done
 
-# Check for Python modules
-if ! python3 -c "import dbus" 2>/dev/null; then
-    MISSING+=("python3-dbus")
-fi
-if ! python3 -c "import pyaudio" 2>/dev/null; then
-    MISSING+=("python3-pyaudio")
-fi
+# Check for Python modules used by Session_Config
+for module in "${PY_MODULES[@]}"; do
+    if ! python3 -c "import ${module}" 2>/dev/null; then
+        MISSING_PY+=("${module}")
+    fi
+done
 
 # Install dependencies only if any are missing
-if [ ${#MISSING[@]} -gt 0 ]; then
-    echo "Missing dependencies: ${MISSING[*]}"
+if [ ${#MISSING[@]} -gt 0 ] || [ ${#MISSING_PY[@]} -gt 0 ]; then
+    if [ ${#MISSING[@]} -gt 0 ]; then
+        echo "Missing system dependencies: ${MISSING[*]}"
+    fi
+    if [ ${#MISSING_PY[@]} -gt 0 ]; then
+        echo "Missing Python modules: ${MISSING_PY[*]}"
+    fi
+
     echo "Installing system dependencies..."
     sudo apt-get update
     sudo apt-get install -y \
@@ -33,23 +40,45 @@ if [ ${#MISSING[@]} -gt 0 ]; then
         bluez-tools \
         dbus \
         python3-dbus \
+        python3-numpy \
+        python3-scipy \
+        python3-pydantic \
+        python3-pip \
         pulseaudio-utils \
         pipewire \
         procps \
         portaudio19-dev \
         python3-pyaudio
+
+    # pyrnnoise is commonly pip-installed; install if still missing after apt packages.
+    if ! python3 -c "import pyrnnoise" 2>/dev/null; then
+        echo "Installing missing Python module via pip: pyrnnoise"
+        python3 -m pip install --user pyrnnoise
+    fi
     
     # Verify installation
     echo "Verifying dependencies..."
     MISSING_AFTER=()
+    MISSING_PY_AFTER=()
     for cmd in "${REQUIRED_CMDS[@]}"; do
         if ! command -v "$cmd" &> /dev/null; then
             MISSING_AFTER+=("$cmd")
         fi
     done
+
+    for module in "${PY_MODULES[@]}"; do
+        if ! python3 -c "import ${module}" 2>/dev/null; then
+            MISSING_PY_AFTER+=("${module}")
+        fi
+    done
     
     if [ ${#MISSING_AFTER[@]} -gt 0 ]; then
         echo "Error: Failed to install dependencies: ${MISSING_AFTER[*]}"
+        exit 1
+    fi
+
+    if [ ${#MISSING_PY_AFTER[@]} -gt 0 ]; then
+        echo "Error: Failed to install Python modules: ${MISSING_PY_AFTER[*]}"
         exit 1
     fi
 else
