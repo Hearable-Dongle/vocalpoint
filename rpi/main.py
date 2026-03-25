@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import time
+from gi.repository import GLib
 
 from bt import BT_Interface
+from audio import Audio_Interface
 from usb import USB_Interface
 from config import Session_Config
 from i2c import I2C_Interface
@@ -24,102 +26,15 @@ def callback(audio_bytes: bytes, channels: int) -> bytes:
     return output_bytes
 
 
-BLE_SCAN_SEC = 15
-SCAN_INTERVAL_SEC = 5.0
-CONNECT_RETRY_COOLDOWN_SEC = 1.0
-IDLE_SLEEP_SEC = 0.2
-
-def _normalize_device_name(name: str) -> str:
-    return name.strip().casefold()
-
-def _merge_devices_list(cache: dict[str, str], new_devices: dict[str, str]) -> None:
-    for addr, name in new_devices.items():
-        cache[str(addr)] = name
-
-def _resolve_device_address(bt: BT_Interface, cached_devices: dict[str, str], device_name: str) -> str | None:
-    wanted = _normalize_device_name(device_name)
-
-    for addr, name in cached_devices.items():
-        if _normalize_device_name(name) == wanted:
-            return str(addr)
-
-    for addr, name in bt.devices(audio_sink=True).items():
-        addr_str = str(addr)
-        cached_devices[addr_str] = name
-        if _normalize_device_name(name) == wanted:
-            return addr_str
-
-    return None
-
-def _handle_output_device_actions(i2c: I2C_Interface, bt: BT_Interface, logger, cached_devices: dict[str, str]) -> bool:
-    handled = False
-    disconnect_name = i2c.take_audio_out_disconnect_name().strip()
-
-    if disconnect_name:
-        handled = True
-        address = _resolve_device_address(bt, cached_devices, disconnect_name)
-        if address is None:
-            print(f"Disconnect requested for {disconnect_name}, but no matching MAC was found")
-            logger.warning(f"Disconnect requested for '{disconnect_name}', but no matching MAC was found")
-        else:
-            logger.info(f"Disconnect requested for '{disconnect_name}' at {address}")
-            bt.disconnect(address)
-
-    forget_name = i2c.take_audio_out_forget_name().strip()
-    if forget_name:
-        handled = True
-        address = _resolve_device_address(bt, cached_devices, forget_name)
-        if address is None:
-            print(f"Forget requested for {forget_name}, but no matching MAC was found")
-            logger.warning(f"Forget requested for '{forget_name}', but no matching MAC was found")
-        else:
-            logger.info(f"Forget requested for '{forget_name}' at {address}")
-            bt.disconnect(address)
-            bt.untrust(address)
-            bt.unpair(address)
-            cached_devices.pop(address, None)
-
-    return handled
-
-def _send_output_devices(i2c: I2C_Interface, devices: dict[str, str]) -> None:
-    for device_name in devices.values():
-        for count in range(3):
-            i2c.write_audio_out_name(device_name)
-            print(f"Found device: {device_name}")
-            time.sleep(0.3)
-            count += 1
-
-def _scan_and_cache(bt: BT_Interface, cached_devices: dict[str, str], duration: int = BLE_SCAN_SEC) -> dict[str, str]:
-    scanned_devices = bt.scan(duration=duration)
-    _merge_devices_list(cached_devices, scanned_devices)
-    return scanned_devices
-
-def _connect_selected_output(bt: BT_Interface, logger, cached_devices: dict[str, str], device_name: str) -> bool:
-    address = _resolve_device_address(bt, cached_devices, device_name)
-
-    if address is None:
-        print(f"No address found for selected device: {device_name}")
-        logger.warning(f"No address found for selected device '{device_name}'")
-        return False
-
-    if not bt.pair(address):
-        return False
-    if not bt.trust(address):
-        return False
-    if not bt.connect(address):
-        return False
-
-    print(f"Connected to {device_name} with address {address}")
-    logger.info(f"Connected to '{device_name}' at {address}")
-    return True
-
 def main() -> int:
     cfg = Session_Config()
+    cfg.logger.info("Starting Vocalpoint audio passthrough application")
 
     # Initialize Bluetooth, USB and I2C interfaces
     bt = BT_Interface(cfg.logger)
     usb = USB_Interface(cfg.logger, cfg.source, cfg.fs, cfg.frame)
-    i2c = I2C_Interface(autostart=True, enable_voice_test=False, emit_logs=True)
+    # i2c = I2C_Interface(autostart=True, enable_voice_test=False, emit_logs=True)
+    audio = Audio_Interface(bt, usb, cfg.logger, channels=6)
 
     # Configure Bluetooth interface
     assert bt.power_off()
@@ -129,50 +44,78 @@ def main() -> int:
     # Configure USB interface
     assert usb.connect()
 
-    cached_devices: dict[str, str] = {}
-    last_announced_at = 0.0
-    last_selected_name = ''
-    next_connect_attempt_at = 0.0
+    # Scan for initial devices
+    devices = bt.scan(duration=15)  # 15 seconds was found to be the minimum time required
+
+    # Get device info if sink was found
+    info = {}
+    if cfg.sink in devices:
+        info = bt.info(cfg.sink)
+        cfg.logger.info(f"Found target sink: {cfg.sink} - {info['Name']}")
+    else:
+        cfg.logger.info(f"Target sink not found: {cfg.sink}")
+        return 1
+
+    # Pair device if unpaired
+    if not info["Paired"]:
+        assert bt.pair(cfg.sink)
+        cfg.logger.info(f"Paired device: {info['Name']}")
+
+    # Trust device if untrusted
+    if not info["Trusted"]:
+        assert bt.trust(cfg.sink)
+        cfg.logger.info(f"Trusted device: {info['Name']}")
+
+    # Connect device if unconnected
+    if not info["Connected"]:
+        assert bt.connect(cfg.sink, cfg.fs)
+        cfg.logger.info(f"Connected device: {info['Name']}")
+
+    # Start audio streaming in background thread
+    # This runs asynchronously while the main loop handles other tasks
+    audio.start(callback)
+
+    def main_loop_callback() -> bool:
+        """
+        Main event loop callback that runs periodically via GLib timeout.
+        This is called every IDLE_SLEEP_SEC milliseconds, allowing the GLib
+        event loop to process D-Bus events and other tasks between iterations.
+        
+        Returns True to continue scheduling, False to stop the loop.
+        """
+        
+        try:
+            cfg.logger.info("Main loop callback executing")
+
+            # Return True to keep the timeout scheduled (non-blocking)
+            return True
+
+        except Exception as e:
+            cfg.logger.error(f"Error in main loop: {e}")
+            return True  # Continue running despite error
 
     try:
-        while True:
-            now = time.monotonic()
+        # Schedule main loop to run every IDLE_SLEEP_SEC milliseconds
+        # This is non-blocking - D-Bus events and audio streaming can process between iterations
+        GLib.timeout_add(int(500 * 1000), main_loop_callback)
 
-            if _handle_output_device_actions(i2c, bt, cfg.logger, cached_devices):
-                last_selected_name = ''
-                next_connect_attempt_at = now
+        # Create and run the main GLib event loop
+        # This will:
+        # - Process D-Bus events from Bluetooth adapter
+        # - Run scheduled callbacks (main_loop_callback)
+        # - Allow the audio streaming background thread to run
+        main_loop = GLib.MainLoop()
+        
+        cfg.logger.info("Starting async event loop for audio passthrough")
+        main_loop.run()
 
-            selected_name = i2c.get_audio_out_name().strip()
+        return 0
 
-            if selected_name and selected_name != last_selected_name and now >= next_connect_attempt_at:
-                print(f"Selected output from app: {selected_name}")
-
-                if _connect_selected_output(bt, cfg.logger, cached_devices, selected_name):
-                    last_selected_name = selected_name
-
-                else:
-                    _scan_and_cache(bt, cached_devices, duration=BLE_SCAN_SEC)
-
-                    if _connect_selected_output(bt, cfg.logger, cached_devices, selected_name):
-                        last_selected_name = selected_name
-
-                    else:
-                        next_connect_attempt_at = time.monotonic() + CONNECT_RETRY_COOLDOWN_SEC
-
-            now = time.monotonic()
-            should_scan_for_outputs = (not selected_name) or (not last_selected_name)
-            if should_scan_for_outputs and now - last_announced_at >= SCAN_INTERVAL_SEC:
-                _scan_and_cache(bt, cached_devices, duration=BLE_SCAN_SEC)
-
-                if cached_devices:
-                    _send_output_devices(i2c, cached_devices)
-
-                last_announced_at = time.monotonic()
-
-            time.sleep(IDLE_SLEEP_SEC)
     except KeyboardInterrupt:
+        cfg.logger.info("Interrupted by user")
         return 0
     finally:
+        audio.stop()
         i2c.stop()
 
 
