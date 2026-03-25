@@ -10,7 +10,7 @@ from i2c import I2C_Interface
 import numpy as np
 
 
-def callback(audio_bytes: bytes, channels: int) -> bytes:
+def audio_callback(audio_bytes: bytes, channels: int) -> bytes:
     """Callback that receives audio frame and sends to Bluetooth sink."""
     # Convert bytes to numpy array
     audio_int16 = np.frombuffer(audio_bytes, dtype=np.int16)
@@ -25,6 +25,22 @@ def callback(audio_bytes: bytes, channels: int) -> bytes:
     
     return output_bytes
 
+def main_callback() -> bool:
+    """
+    Main event loop callback that runs periodically via GLib timeout.
+    """
+    # Try to execute the main loop callback
+    try:
+        cfg.logger.info("Main loop callback executing")
+
+    # Catch any exceptions to prevent the GLib loop from stopping
+    except Exception as e:
+        # Log any exceptions that occur in the main loop
+        cfg.logger.error(f"Error in main loop: {e}")
+
+    finally:
+        # Continue running despite error
+        return True  
 
 def main() -> int:
     cfg = Session_Config()
@@ -72,32 +88,11 @@ def main() -> int:
         cfg.logger.info(f"Connected device: {info['Name']}")
 
     # Start audio streaming in background thread
-    # This runs asynchronously while the main loop handles other tasks
-    audio.start(callback)
-
-    def main_loop_callback() -> bool:
-        """
-        Main event loop callback that runs periodically via GLib timeout.
-        This is called every IDLE_SLEEP_SEC milliseconds, allowing the GLib
-        event loop to process D-Bus events and other tasks between iterations.
-        
-        Returns True to continue scheduling, False to stop the loop.
-        """
-        
-        try:
-            cfg.logger.info("Main loop callback executing")
-
-            # Return True to keep the timeout scheduled (non-blocking)
-            return True
-
-        except Exception as e:
-            cfg.logger.error(f"Error in main loop: {e}")
-            return True  # Continue running despite error
+    audio.start(audio_callback)
 
     try:
-        # Schedule main loop to run every IDLE_SLEEP_SEC milliseconds
-        # This is non-blocking - D-Bus events and audio streaming can process between iterations
-        GLib.timeout_add(500, main_loop_callback)
+        # Schedule main loop to run periodically
+        GLib.timeout_add(500, main_callback)
 
         # Create and run the main GLib event loop
         # This will:
@@ -112,10 +107,18 @@ def main() -> int:
         return 0
 
     except KeyboardInterrupt:
+        # Log interruption by user but not as an error
         cfg.logger.info("Interrupted by user")
-        return 0
+
     finally:
-        audio.stop()
+        # Ensure all interfaces are stopped and Bluetooth is disconnected on exit
+        if not audio.stop() or not usb.stop() or not bt.disconnect():
+            # Log if any interface did not stop cleanly
+            cfg.logger.warning("One or more interfaces did not stop cleanly")
+
+        else:
+            # Log if all interfaces stopped cleanly
+            cfg.logger.info("All interfaces stopped cleanly")
         # i2c.stop()
 
 
