@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
-import time
+# Standard imports
 from gi.repository import GLib
+import time
 
+# Third-party imports
+import numpy as np
+
+# Local imports
+from audio import audio_callback
 from bt import BT_Interface
-from stream import Stream_Interface
-from usb import USB_Interface
 from config import Session_Config
 from i2c import I2C_Interface
-import numpy as np
+from stream import Stream_Interface
+from usb import USB_Interface
 
-from speech_enhancement_callback import process_callback_audio
-import numpy as np
-
-def audio_callback(audio_bytes: bytes, channels: int) -> bytes:
-    """Callback that receives audio frame and sends to Bluetooth sink."""
-    output_bytes = process_callback_audio(audio_bytes, channels)
-    return output_bytes
 
 def main_callback() -> bool:
     """

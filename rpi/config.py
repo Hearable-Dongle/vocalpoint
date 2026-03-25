@@ -2,6 +2,7 @@
 import re
 import shutil
 import logging
+import subprocess
 from pathlib import Path
 
 
@@ -24,8 +25,7 @@ class Session_Config():
         "pyaudio",
         "numpy",
         "scipy",
-        "pydantic",
-        "pyrnnoise"
+        "pydantic"
     ]
 
     def __init__(self) -> None:

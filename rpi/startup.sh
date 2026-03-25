@@ -8,7 +8,7 @@ cd "$SCRIPT_DIR"
 echo "Checking dependencies..."
 REQUIRED_CMDS=("pactl" "bluetoothd" "pkill" "sudo")
 MISSING=()
-PY_MODULES=("dbus" "pyaudio" "numpy" "scipy" "pydantic" "pyrnnoise")
+PY_MODULES=("dbus" "pyaudio" "numpy" "scipy" "pydantic")
 MISSING_PY=()
 
 for cmd in "${REQUIRED_CMDS[@]}"; do
@@ -50,11 +50,6 @@ if [ ${#MISSING[@]} -gt 0 ] || [ ${#MISSING_PY[@]} -gt 0 ]; then
         portaudio19-dev \
         python3-pyaudio
 
-    # pyrnnoise is commonly pip-installed; install if still missing after apt packages.
-    if ! python3 -c "import pyrnnoise" 2>/dev/null; then
-        echo "Installing missing Python module via pip: pyrnnoise"
-        python3 -m pip install --user pyrnnoise
-    fi
     
     # Verify installation
     echo "Verifying dependencies..."
