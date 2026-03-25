@@ -1,48 +1,59 @@
 #!/usr/bin/env python3
-# Local imports
-import sys
 import time
-from pathlib import Path
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SIGNAL_PROCESSING_ROOT = REPO_ROOT / "signal-processing-research"
-
-for path in (REPO_ROOT, SIGNAL_PROCESSING_ROOT):
-    path_str = str(path)
-    if path_str not in sys.path:
-        sys.path.insert(0, path_str)
+from gi.repository import GLib
 
 from bt import BT_Interface
+from audio import Audio_Interface
 from usb import USB_Interface
 from config import Session_Config
+from i2c import I2C_Interface
+import numpy as np
 
 from speech_enhancement_callback import process_callback_audio
 import numpy as np
 
-def callback(audio_bytes: bytes, channels: int) -> bytes:
+def audio_callback(audio_bytes: bytes, channels: int) -> bytes:
     """Callback that receives audio frame and sends to Bluetooth sink."""
     output_bytes = process_callback_audio(audio_bytes, channels)
     return output_bytes
 
+def main_callback() -> bool:
+    """
+    Main event loop callback that runs periodically via GLib timeout.
+    """
+    # Try to execute the main loop callback
+    try:
+        cfg.logger.info("Main loop callback executing")
+
+    # Catch any exceptions to prevent the GLib loop from stopping
+    except Exception as e:
+        # Log any exceptions that occur in the main loop
+        cfg.logger.error(f"Error in main loop: {e}")
+
+    finally:
+        # Continue running despite error
+        return True  
 
 def main() -> int:
-    # Load session configuration
     cfg = Session_Config()
+    cfg.logger.info("Starting Vocalpoint audio passthrough application")
 
-    # Create Bluetooth and USB interface with logger
+    # Initialize Bluetooth, USB and I2C interfaces
     bt = BT_Interface(cfg.logger)
     usb = USB_Interface(cfg.logger, cfg.source, cfg.fs, cfg.frame)
+    # i2c = I2C_Interface(autostart=True, enable_voice_test=False, emit_logs=True)
+    audio = Audio_Interface(bt, usb, cfg.logger, channels=6)
 
-    # Initialize Bluetooth interface
+    # Configure Bluetooth interface
     assert bt.power_off()
     assert bt.power_on()
     assert bt.agent_on()
 
-    # Connect USB interface
+    # Configure USB interface
     assert usb.connect()
 
-    # Scan for devices
-    devices = bt.scan(duration = 15) # 15 seconds was found to be the minimum time required
+    # Scan for initial devices
+    devices = bt.scan(duration=15)  # 15 seconds was found to be the minimum time required
 
     # Get device info if sink was found
     info = {}
@@ -68,35 +79,40 @@ def main() -> int:
         assert bt.connect(cfg.sink, cfg.fs)
         cfg.logger.info(f"Connected device: {info['Name']}")
 
-    # Stream audio with consistent timing
+    # Start audio streaming in background thread
+    audio.start(audio_callback)
+
     try:
-        consecutive_errors = 0
-        while True:
-            audio_frame = usb.read_frame()
-            if audio_frame is None:
-                consecutive_errors += 1
-                if consecutive_errors > 10:
-                    cfg.logger.error("Too many consecutive read errors, stopping stream")
-                    break
-                continue
-            
-            consecutive_errors = 0
-            processed_frame = callback(audio_frame, usb.channels)
-            if not bt.write_audio(processed_frame):
-                cfg.logger.warning("Failed to write audio frame")
+        # Schedule main loop to run periodically
+        GLib.timeout_add(500, main_callback)
+
+        # Create and run the main GLib event loop
+        # This will:
+        # - Process D-Bus events from Bluetooth adapter
+        # - Run scheduled callbacks (main_loop_callback)
+        # - Allow the audio streaming background thread to run
+        main_loop = GLib.MainLoop()
+        
+        cfg.logger.info("Starting async event loop for audio passthrough")
+        main_loop.run()
+
     except KeyboardInterrupt:
-        cfg.logger.info("Interrupted by user, shutting down...")
-    except Exception as e:
-        raise e
-        cfg.logger.error(f"Error during streaming: {e}")
+        # Log interruption by user but not as an error
+        cfg.logger.info("Interrupted by user")
+
     finally:
-        if not bt.disconnect(cfg.sink):
-            cfg.logger.error("Failed to disconnect Bluetooth device")
-        if not usb.disconnect():
-            cfg.logger.error("Failed to disconnect USB device")
+        # Ensure all interfaces are stopped and Bluetooth is disconnected on exit
+        if not audio.stop() or not usb.stop() or not bt.disconnect():
+            # Log if any interface did not stop cleanly
+            cfg.logger.warning("One or more interfaces did not stop cleanly")
 
-    return 0
+        else:
+            # Log if all interfaces stopped cleanly
+            cfg.logger.info("All interfaces stopped cleanly")
 
-# Script entry point
+        # Return 0 to indicate successful execution
+        return 0
+
+
 if __name__ == "__main__":
     raise SystemExit(main())

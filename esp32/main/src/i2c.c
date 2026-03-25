@@ -88,8 +88,8 @@ static int i2c_req_is_status_request(uint32_t req_flags)
 
 static int i2c_req_is_param_request(uint32_t req_flags)
 {
-    uint32_t param_bits = req_flags & VP_PARAM_BITS_MASK;
-    uint32_t unknown_bits = req_flags & ~(VP_REQ_DATA | VP_PARAM_BITS_MASK | VP_REQ_OFFSET_MASK);
+    uint32_t param_bits = req_flags & VP_REQ_FETCH_PARAM_BITS_MASK;
+    uint32_t unknown_bits = req_flags & ~(VP_REQ_DATA | VP_REQ_FETCH_PARAM_BITS_MASK | VP_REQ_OFFSET_MASK);
 
     if ((req_flags & VP_REQ_DATA) == 0U) {
         return 0;
@@ -116,6 +116,11 @@ static int i2c_req_is_audio_out_name_write_request(uint32_t req_flags)
 {
     const uint32_t expected = VP_REQ_WRITE | VP_REQ_AUDIO_OUT_NAME;
     return req_flags == expected;
+}
+
+static int i2c_req_is_reboot_ack_request(uint32_t req_flags)
+{
+    return req_flags == VP_REQ_ACK_REBOOT;
 }
 
 static esp_err_t i2c_mailbox_read_request(uint32_t *out_req)
@@ -207,12 +212,6 @@ static size_t vp_param_payload_info(uint32_t param_bit,
         return VP_PAYLOAD_VOICE_PROFILE_NUM_LEN;
     }
 
-    if (param_bit == VP_REQ_BLE_UUID_ADDR) {
-        *payload = (const uint8_t *)snap->ble_uuid_addr;
-        *clear_mask = VP_FLAG_BLE_UUID_ADDR;
-        return VP_PAYLOAD_BLE_UUID_ADDR_LEN;
-    }
-
     if (param_bit == VP_REQ_AUDIO_OUT_NAME) {
         *payload = (const uint8_t *)snap->audio_out_name_set;
         *clear_mask = VP_FLAG_AUDIO_OUT_NAME;
@@ -231,6 +230,18 @@ static size_t vp_param_payload_info(uint32_t param_bit,
         return VP_PAYLOAD_WIFI_PWD_LEN;
     }
 
+    if (param_bit == VP_REQ_AUDIO_OUT_DISCONNECT) {
+        *payload = (const uint8_t *)snap->audio_out_disconnect_name;
+        *clear_mask = VP_FLAG_AUDIO_OUT_DISCONNECT;
+        return VP_PAYLOAD_AUDIO_OUT_DISCONNECT_LEN;
+    }
+
+    if (param_bit == VP_REQ_AUDIO_OUT_FORGET) {
+        *payload = (const uint8_t *)snap->audio_out_forget_name;
+        *clear_mask = VP_FLAG_AUDIO_OUT_FORGET;
+        return VP_PAYLOAD_AUDIO_OUT_FORGET_LEN;
+    }
+
     *payload = NULL;
     *clear_mask = 0U;
     return 0U;
@@ -239,15 +250,27 @@ static size_t vp_param_payload_info(uint32_t param_bit,
 static esp_err_t i2c_render_status_response(void)
 {
     uint8_t resp[VP_STATUS_LEN];
-    uint32_t flags = vp_state_get_dirty_flags();
+    uint32_t flags = vp_state_get_dirty_flags() & VP_STATUS_BITS_MASK;
 
     put_u32_le(resp, flags);
     return i2c_mailbox_write_response(resp, sizeof(resp));
 }
 
+static esp_err_t i2c_handle_reboot_ack(void)
+{
+    vp_state_clear_dirty_bits(VP_FLAG_REBOOT);
+
+    esp_err_t err = i2c_render_status_response();
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    return i2c_mailbox_clear_request();
+}
+
 static esp_err_t i2c_render_param_response(uint32_t req_flags, const vp_state_snapshot_t *snap)
 {
-    uint32_t param_bit = req_flags & VP_PARAM_BITS_MASK;
+    uint32_t param_bit = req_flags & VP_REQ_FETCH_PARAM_BITS_MASK;
     uint32_t req_offset = vp_req_get_offset(req_flags);
     uint8_t resp[VP_RESP_MAILBOX_LEN];
     const uint8_t *payload = NULL;
@@ -404,6 +427,15 @@ static void i2c_task(void *arg)
             err = i2c_handle_audio_out_name_write();
             if (err != ESP_OK) {
                 ESP_LOGW(TAG, "audio output write failed: %s", esp_err_to_name(err));
+            }
+            vTaskDelay(pdMS_TO_TICKS(I2C_TASK_PERIOD_MS));
+            continue;
+        }
+
+        if (i2c_req_is_reboot_ack_request(req_flags)) {
+            err = i2c_handle_reboot_ack();
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "reboot ack failed: %s", esp_err_to_name(err));
             }
             vTaskDelay(pdMS_TO_TICKS(I2C_TASK_PERIOD_MS));
             continue;

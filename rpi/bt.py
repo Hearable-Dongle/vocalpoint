@@ -1,543 +1,1311 @@
 # Standard imports
+from pathlib import Path
+from typing import Optional, Callable
+import logging
+import re
+import subprocess
+import textwrap
+import time
+
+# Third-party imports
+from dbus.mainloop.glib import DBusGMainLoop, threads_init
+from gi.repository import GLib
 import dbus
 import dbus.service
-import textwrap
-import re
-import time
-import logging
-import subprocess
-from pathlib import Path
-from dbus.mainloop.glib import DBusGMainLoop, threads_init
 
-
-# D-Bus object paths
-BLUEZ_SERVICE = 'org.bluez'
-ADAPTER_PATH = '/org/bluez/hci0'
-DEVICE_PREFIX = '/org/bluez/hci0/dev_'
 
 class BT_Interface:
+    """
+    Interface for Bluetooth device control via D-Bus and audio routing to PulseAudio.
+    """
+
+    # Define threshold for marking hardfault conditions based on consecutive operation failures
+    __FAILURE_THRESHOLD: int = 5
+
+    # D-Bus service and object path constants
+    __BLUEZ_SERVICE: str = 'org.bluez'
+    __ADAPTER_PATH: str = '/org/bluez/hci0'
+    __DEVICE_PREFIX: str = '/org/bluez/hci0/dev_'
 
     def __init__(self, logger: logging.Logger) -> None:
-        # Store logger instance
-        self.__logger = logger
-        self.__pulseaudio_sink = None
-        self.__paplay_process = None
-        self.__connected_mac = None
+        """
+        Initialize Bluetooth interface with D-Bus connection.
         
-        # Initialize D-Bus
+        Parameters
+        ----------
+        logger : logging.Logger
+            Logger instance for recording Bluetooth events and errors
+            
+        Returns
+        -------
+        None
+        """
+        # Initialize instance variables
+        self.__logger = logger
+        self.__pulseaudio_sink: Optional[dbus.Interface] = None
+        self.__paplay_process: Optional[subprocess.Popen[bytes]] = None
+        self.__connected_mac: Optional[str] = None
+
+        # Define hardfault flag and error tracking
+        self.__hardfault: bool = False
+        self.__consecutive_failures: int = 0
+        
+        # Async sink discovery state
+        self.__sink_found: Optional[str] = None
+        self.__sink_search_active: bool = False
+        self.__sink_signal_match = None
+        
+        # Initialize D-Bus event loop for asynchronous operations
         DBusGMainLoop(set_as_default=True)
         threads_init()
         
+        # Attempt to establish D-Bus connection and get Bluetooth adapter
         try:
+            # Connect to system D-Bus
             self.__bus = dbus.SystemBus()
-            self.__adapter = self.__get_adapter()
-            self.__logger.info("BT_Interface initialized with D-Bus API")
-        except dbus.exceptions.DBusException as e:
-            self.__logger.error(f"Failed to initialize D-Bus: {str(e)}")
-            raise RuntimeError(f"D-Bus initialization failed: {e}")
-    
-    def __get_adapter(self):
-        """Get the Bluetooth adapter interface"""
-        try:
-            adapter_obj = self.__bus.get_object(BLUEZ_SERVICE, ADAPTER_PATH)
-            return dbus.Interface(adapter_obj, BLUEZ_SERVICE + '.Adapter1')
-        except dbus.exceptions.DBusException as e:
-            self.__logger.error(f"Failed to get adapter: {str(e)}")
-            raise
-    
-    def __get_device(self, mac: str):
-        """Get device object interface for a given MAC address"""
-        device_path = DEVICE_PREFIX + mac.replace(':', '_').upper()
-        try:
-            device_obj = self.__bus.get_object(BLUEZ_SERVICE, device_path)
-            return dbus.Interface(device_obj, BLUEZ_SERVICE + '.Device1')
-        except dbus.exceptions.DBusException as e:
-            self.__logger.error(f"Failed to get device {mac} at path {device_path}: {str(e)}")
-            raise
 
+            # Get D-Bus object for the Bluetooth adapter at /org/bluez/hci0
+            adapter_obj = self.__bus.get_object(self.__BLUEZ_SERVICE, self.__ADAPTER_PATH)
+
+            # Wrap object in D-Bus interface for method calls
+            self.__adapter =  dbus.Interface(adapter_obj, self.__BLUEZ_SERVICE + '.Adapter1')
+
+            # Log successful initialization
+            self.__logger.info("BT Interface initialized with D-Bus API")
+
+        # Catch any D-Bus exceptions during initialization and log them
+        except dbus.exceptions.DBusException as e:
+
+            # Log the error with detailed context and set hardfault to signal failure
+            self.__logger.error(f"Failed to initialize D-Bus: {str(e)}")
+
+            # Mark as hardfault since Bluetooth interface cannot function without D-Bus connection
+            self.__hardfault = True
     
-    def __strip_ansi(self, text: str) -> str:
-        """Remove ANSI escape codes from text"""
-        ansi_escape = re.compile(r'\x1b\[[0-9;]*m|\[K')
-        return ansi_escape.sub('', text)
-    
-    def __log_failure(self, operation: str, device: str = "", output: str = "", error: str = "") -> None:
-        """Log failure with context"""
-        log_entry = f"\nOperation: {operation}"
-        if device:
-            log_entry += f"\nDevice: {device}"
-        if output:
-            cleaned_output = self.__strip_ansi(output)
-            indented_output = textwrap.indent(cleaned_output, "\t")
-            log_entry += f"\nOutput:\n{indented_output}"
-        if error:
-            cleaned_error = self.__strip_ansi(error)
-            indented_error = textwrap.indent(cleaned_error, "\t")
-            log_entry += f"\nError:\n{indented_error}"
+    def __get_device(self, mac: str) -> Optional[dbus.Interface]:
+        """
+        Get device object interface for a given MAC address.
         
-        self.__logger.error(log_entry)
+        Parameters
+        ----------
+        mac : str
+            Bluetooth device MAC address (e.g., "BC:87:FA:57:47:0E")
+            
+        Returns
+        -------
+        dbus.Interface
+            D-Bus interface for the Bluetooth device
+        """
+
+        # Set device to None by default in case of failure
+        device = None
+
+        # Construct D-Bus device path from MAC address, replacing colons with underscores
+        device_path = self.__DEVICE_PREFIX + mac.replace(':', '_').upper()
+
+        # Attempt to get the D-Bus object for the device and wrap it in an interface
+        try:
+            # Get D-Bus object for the device
+            device_obj = self.__bus.get_object(self.__BLUEZ_SERVICE, device_path)
+
+            # Wrap object in D-Bus interface for method calls
+            device = dbus.Interface(device_obj, self.__BLUEZ_SERVICE + '.Device1')
+
+        # Catch D-Bus exceptions when trying to access the device and log them with context
+        except dbus.exceptions.DBusException as e:
+
+            # Log the error with detailed context and re-raise the exception to signal failure
+            self.__logger.error(f"Failed to get device {mac} at path {device_path}: {str(e)}")
+
+        finally:
+            # Return the device interface or None if retrieval failed
+            return device
     
     def power_on(self) -> bool:
-        """Power on the Bluetooth adapter"""
+        """
+        Power on the Bluetooth adapter.
+
+        Parameters
+        ----------
+        None
+        
+        Returns
+        -------
+        bool
+            True if adapter powered on successfully, False otherwise
+        """
+
+        # Set return value to False by default in case of failure
+        ret_code = False
+
+        # Attempt to power on the Bluetooth adapter via D-Bus
         try:
-            # Get adapter properties
+            # Get D-Bus Properties interface for the Bluetooth adapter
             adapter_props = dbus.Interface(
-                self.__bus.get_object(BLUEZ_SERVICE, ADAPTER_PATH),
+                self.__bus.get_object(self.__BLUEZ_SERVICE, self.__ADAPTER_PATH),
                 'org.freedesktop.DBus.Properties'
             )
-            # Set Powered to True
-            adapter_props.Set(BLUEZ_SERVICE + '.Adapter1', 'Powered', dbus.Boolean(True))
             
-            # Verify it's powered on
-            powered = adapter_props.Get(BLUEZ_SERVICE + '.Adapter1', 'Powered')
+            # Set Powered property to True via D-Bus
+            adapter_props.Set(self.__BLUEZ_SERVICE + '.Adapter1', 'Powered', dbus.Boolean(True))
+            
+            # Verify that Powered property was successfully set
+            powered = adapter_props.Get(self.__BLUEZ_SERVICE + '.Adapter1', 'Powered')
             if powered:
+                # Log successful power on
                 self.__logger.info("Bluetooth adapter powered on")
-                return True
+
+                # Set return value to True on success
+                ret_code = True
+            
             else:
-                self.__log_failure("power_on", error="Adapter failed to power on")
-                return False
-                
+                # Log failure to power on
+                self.__logger.error("Adapter failed to power on")
+        
+        # Catch D-Bus exceptions during power on attempt
         except dbus.exceptions.DBusException as e:
-            self.__log_failure("power_on", error=str(e))
-            return False
+            # Log unsuccessful power on
+            self.__logger.error(f"Power on failed: {str(e)}")
+
+        finally:
+            # Return the result of the power on attempt
+            return ret_code
     
     def power_off(self) -> bool:
-        """Power off the Bluetooth adapter"""
+        """
+        Power off the Bluetooth adapter.
+
+        Parameters
+        ----------
+        None
+        
+        Returns
+        -------
+        bool
+            True if adapter powered off successfully, False otherwise
+        """
+
+        # Set return value to False by default in case of failure
+        ret_code = False
+
+        # Attempt to power off the Bluetooth adapter via D-Bus
         try:
+            # Get D-Bus Properties interface for the Bluetooth adapter
             adapter_props = dbus.Interface(
-                self.__bus.get_object(BLUEZ_SERVICE, ADAPTER_PATH),
+                self.__bus.get_object(self.__BLUEZ_SERVICE, self.__ADAPTER_PATH),
                 'org.freedesktop.DBus.Properties'
             )
-            adapter_props.Set(BLUEZ_SERVICE + '.Adapter1', 'Powered', dbus.Boolean(False))
+
+            # Set Powered property to False via D-Bus
+            adapter_props.Set(self.__BLUEZ_SERVICE + '.Adapter1', 'Powered', dbus.Boolean(False))
             
-            powered = adapter_props.Get(BLUEZ_SERVICE + '.Adapter1', 'Powered')
+            # Verify that Powered property was successfully cleared
+            powered = adapter_props.Get(self.__BLUEZ_SERVICE + '.Adapter1', 'Powered')
             if not powered:
+                # Log successful power off
                 self.__logger.info("Bluetooth adapter powered off")
-                return True
-            else:
-                self.__log_failure("power_off", error="Adapter failed to power off")
-                return False
                 
+                # Set return value to True on success
+                ret_code = True
+            
+            else:
+                # Log failure to power off
+                self.__logger.error("Adapter failed to power off")
+        
+        # Catch D-Bus exceptions during power on attempt
         except dbus.exceptions.DBusException as e:
-            self.__log_failure("power_off", error=str(e))
-            return False
+            # Log unsuccessful power off
+            self.__logger.error(f"power_off failed: {str(e)}")
+        
+        finally:
+            # Return the result of the power off attempt
+            return ret_code
     
     def agent_on(self) -> bool:
-        """Enable pairing agent"""
+        """
+        Enable pairing on the Bluetooth adapter.
+
+        Parameters
+        ----------
+        None
+        
+        Returns
+        -------
+        bool
+            True if pairing enabled successfully, False otherwise
+        """
+
+        # Set return value to False by default in case of failure
+        ret_code = False
+
+        # Attempt to enable pairing mode on the Bluetooth adapter via D-Bus
         try:
-            # For D-Bus, agent management is handled differently
-            # We'll just set pairable mode on the adapter
+            # Get D-Bus Properties interface for the Bluetooth adapter
             adapter_props = dbus.Interface(
-                self.__bus.get_object(BLUEZ_SERVICE, ADAPTER_PATH),
+                self.__bus.get_object(self.__BLUEZ_SERVICE, self.__ADAPTER_PATH),
                 'org.freedesktop.DBus.Properties'
             )
-            adapter_props.Set(BLUEZ_SERVICE + '.Adapter1', 'Pairable', dbus.Boolean(True))
+
+            # Set Pairable property to True to enable pairing mode
+            adapter_props.Set(self.__BLUEZ_SERVICE + '.Adapter1', 'Pairable', dbus.Boolean(True))
             
-            pairable = adapter_props.Get(BLUEZ_SERVICE + '.Adapter1', 'Pairable')
+            # Verify that Pairable property was successfully set
+            pairable = adapter_props.Get(self.__BLUEZ_SERVICE + '.Adapter1', 'Pairable')
             if pairable:
+                # Log successful enabling of pairing mode
                 self.__logger.info("Bluetooth pairing enabled")
-                return True
+
+                # Set return value to True on success
+                ret_code = True
+            
             else:
-                self.__log_failure("agent_on", error="Failed to enable pairing")
-                return False
-                
+                # Log failure to enable pairing
+                self.__logger.error("Failed to enable pairing")
+        
+        # Catch D-Bus exceptions during pairing mode enable attempt
         except dbus.exceptions.DBusException as e:
-            self.__log_failure("agent_on", error=str(e))
-            return False
+            # Log unsuccessful attempt to enable pairing
+            self.__logger.error(f"agent_on failed: {str(e)}")
+
+        finally:
+            # Return the result of the pairing mode enable attempt
+            return ret_code
     
     def agent_off(self) -> bool:
-        """Disable pairing agent"""
+        """
+        Disable pairing on the Bluetooth adapter.
+
+        Parameters
+        ----------
+        None
+        
+        Returns
+        -------
+        bool
+            True if pairing disabled successfully, False otherwise
+        """
+
+        # Set return value to False by default in case of failure
+        ret_code = False
+
+        # Attempt to disable pairing mode on the Bluetooth adapter via D-Bus
         try:
+            # Get D-Bus Properties interface for the Bluetooth adapter
             adapter_props = dbus.Interface(
-                self.__bus.get_object(BLUEZ_SERVICE, ADAPTER_PATH),
+                self.__bus.get_object(self.__BLUEZ_SERVICE, self.__ADAPTER_PATH),
                 'org.freedesktop.DBus.Properties'
             )
-            adapter_props.Set(BLUEZ_SERVICE + '.Adapter1', 'Pairable', dbus.Boolean(False))
+
+            # Set Pairable property to False to disable pairing mode
+            adapter_props.Set(self.__BLUEZ_SERVICE + '.Adapter1', 'Pairable', dbus.Boolean(False))
             
-            pairable = adapter_props.Get(BLUEZ_SERVICE + '.Adapter1', 'Pairable')
+            # Verify that Pairable property was successfully cleared
+            pairable = adapter_props.Get(self.__BLUEZ_SERVICE + '.Adapter1', 'Pairable')
             if not pairable:
+                # Log successful disabling of pairing mode
                 self.__logger.info("Bluetooth pairing disabled")
-                return True
-            else:
-                self.__log_failure("agent_off", error="Failed to disable pairing")
-                return False
                 
+                # Set return value to True on success
+                ret_code = True
+
+            else:
+                # Log failure to disable pairing
+                self.__logger.error("Failed to disable pairing")
+
+        # Catch D-Bus exceptions during pairing mode disable attempt 
         except dbus.exceptions.DBusException as e:
-            self.__log_failure("agent_off", error=str(e))
-            return False
+            # Log unsuccessful attempt to disable pairing
+            self.__logger.error(f"agent_off failed: {str(e)}")
+
+        finally:
+            # Return the result of the pairing mode disable attempt
+            return ret_code
     
     def pair(self, mac: str) -> bool:
-        """Pair with a Bluetooth device"""
-        try:
-            device = self.__get_device(mac)
-            device.Pair(timeout=60000)  # 60 second timeout for pairing
-            self.__logger.info(f"Successfully paired with {mac}")
-            return True
+        """
+        Pair with a Bluetooth device.
+        
+        Parameters
+        ----------
+        mac : str
+            Device MAC address to pair with
             
+        Returns
+        -------
+        bool
+            True if pairing successful or already paired, False otherwise
+        """
+
+        # Set return value to False by default in case of failure
+        ret_code = False
+
+        # Attempt to pair with the Bluetooth device via D-Bus
+        try:
+            # Get device interface for the target MAC address
+            device = self.__get_device(mac)
+
+            # Initiate pairing with 60 second timeout
+            device.Pair(timeout=60000)
+
+            # Log successful pairing
+            self.__logger.info(f"Successfully paired with {mac}")
+
+            # Set return value to True on success
+            ret_code = True
+        
+        # Catch D-Bus exceptions during pairing attempt
         except dbus.exceptions.DBusException as e:
+            # Device may already be paired, which is fine
             if "Already paired" in str(e):
+                # Log that device is already paired and treat as success
                 self.__logger.info(f"Device {mac} already paired")
-                return True
-            self.__log_failure("pair", device=mac, error=str(e))
-            return False
+                
+                # Set return value to True since device is already paired
+                ret_code = True
+
+            else:
+                # Log unsuccessful pairing attempt with detailed context
+                self.__logger.error(f"pair failed for {mac}: {str(e)}")
+
+        finally:
+            # Return the result of the pairing attempt
+            return ret_code
     
     def unpair(self, mac: str) -> bool:
-        """Unpair from a Bluetooth device"""
-        try:
-            adapter = self.__get_adapter()
-            device_path = DEVICE_PREFIX + mac.replace(':', '_').upper()
-            adapter.RemoveDevice(device_path)
-            self.__logger.info(f"Successfully unpaired from {mac}")
-            return True
+        """
+        Unpair from a Bluetooth device.
+        
+        Parameters
+        ----------
+        mac : str
+            Device MAC address to unpair from
             
+        Returns
+        -------
+        bool
+            True if unpairing successful or device not found, False otherwise
+        """
+
+        # Set return value to False by default in case of failure
+        ret_code = False
+
+        # Attempt to unpair with the Bluetooth device via D-Bus
+        try:
+            # Construct D-Bus device path from MAC address
+            device_path = self.__DEVICE_PREFIX + mac.replace(':', '_').upper()
+
+            # Remove device via adapter's RemoveDevice method
+            self.__adapter.RemoveDevice(device_path)
+
+            # Log successful unpairing
+            self.__logger.info(f"Successfully unpaired from {mac}")
+            
+            # Set return value to True on success
+            ret_code = True
+        
+        # Catch D-Bus exceptions during unpairing attempt
         except dbus.exceptions.DBusException as e:
+            # Device not found is acceptable (not paired to begin with)
             if "Not found" in str(e):
+                # Log that device was not found and treat as success
                 self.__logger.info(f"Device {mac} not found (not paired)")
-                return True
-            self.__log_failure("unpair", device=mac, error=str(e))
-            return False
+
+                # Set return value to True since device is effectively unpaired
+                ret_code = True
+
+            else:
+                # Log unsuccessful unpairing attempt with detailed context
+                self.__logger.error(f"unpair failed for {mac}: {str(e)}")
+        
+        finally:
+            # Return the result of the unpairing attempt
+            return ret_code
     
     def trust(self, mac: str) -> bool:
-        """Trust a Bluetooth device"""
-        try:
-            device_props = dbus.Interface(
-                self.__bus.get_object(BLUEZ_SERVICE, DEVICE_PREFIX + mac.replace(':', '_').upper()),
-                'org.freedesktop.DBus.Properties'
-            )
-            device_props.Set(BLUEZ_SERVICE + '.Device1', 'Trusted', dbus.Boolean(True))
+        """
+        Trust a Bluetooth device to connect automatically.
+        
+        Parameters
+        ----------
+        mac : str
+            Device MAC address to trust
             
-            trusted = device_props.Get(BLUEZ_SERVICE + '.Device1', 'Trusted')
+        Returns
+        -------
+        bool
+            True if device trusted successfully, False otherwise
+        """
+
+        # Set return value to False by default in case of failure
+        ret_code = False
+
+        # Attempt to trust the Bluetooth device via D-Bus
+        try:
+            # Get D-Bus Properties interface for the device
+            device_props = dbus.Interface(
+                self.__bus.get_object(
+                    self.__BLUEZ_SERVICE,
+                    self.__DEVICE_PREFIX + mac.replace(':', '_').upper(),
+                ),
+                'org.freedesktop.DBus.Properties',
+            )
+
+            # Set Trusted property to True via D-Bus
+            device_props.Set(self.__BLUEZ_SERVICE + '.Device1', 'Trusted', dbus.Boolean(True))
+            
+            # Verify that Trusted property was successfully set
+            trusted = device_props.Get(self.__BLUEZ_SERVICE + '.Device1', 'Trusted')
             if trusted:
+                # Log successful trusting of the device
                 self.__logger.info(f"Device {mac} trusted")
-                return True
-            else:
-                self.__log_failure("trust", device=mac, error="Failed to set trusted property")
-                return False
                 
-        except dbus.exceptions.DBusException as e:
-            self.__log_failure("trust", device=mac, error=str(e))
-            return False
-    
-    def untrust(self, mac: str) -> bool:
-        """Untrust a Bluetooth device"""
-        try:
-            device_props = dbus.Interface(
-                self.__bus.get_object(BLUEZ_SERVICE, DEVICE_PREFIX + mac.replace(':', '_').upper()),
-                'org.freedesktop.DBus.Properties'
-            )
-            device_props.Set(BLUEZ_SERVICE + '.Device1', 'Trusted', dbus.Boolean(False))
+                # Set return value to True on success
+                ret_code = True
             
-            trusted = device_props.Get(BLUEZ_SERVICE + '.Device1', 'Trusted')
-            if not trusted:
-                self.__logger.info(f"Device {mac} untrusted")
-                return True
             else:
-                self.__log_failure("untrust", device=mac, error="Failed to unset trusted property")
-                return False
-                
+                # Log failure to trust the device
+                self.__logger.error(f"Failed to set trusted property for {mac}")
+        
+        # Catch D-Bus exceptions during trust attempt
         except dbus.exceptions.DBusException as e:
-            self.__log_failure("untrust", device=mac, error=str(e))
-            return False
+            # Log unsuccessful attempt to trust the device with detailed context
+            self.__logger.error(f"trust failed for {mac}: {str(e)}")
+        
+        finally:
+            # Return the result of the trust attempt
+            return ret_code
+
+    def untrust(self, mac: str) -> bool:
+        """
+        Untrust a Bluetooth device.
+        
+        Parameters
+        ----------
+        mac : str
+            Device MAC address to untrust
+            
+        Returns
+        -------
+        bool
+            True if device untrusted successfully, False otherwise
+        """
+
+        # Set return value to False by default in case of failure
+        ret_code = False
+
+        # Attempt to untrust the Bluetooth device via D-Bus
+        try:
+            # Get D-Bus Properties interface for the device
+            device_props = dbus.Interface(
+                self.__bus.get_object(
+                    self.__BLUEZ_SERVICE,
+                    self.__DEVICE_PREFIX + mac.replace(':', '_').upper(),
+                ),
+                'org.freedesktop.DBus.Properties',
+            )
+            
+            # Set Trusted property to False via D-Bus
+            device_props.Set(self.__BLUEZ_SERVICE + '.Device1', 'Trusted', dbus.Boolean(False))
+            
+            # Verify that Trusted property was successfully cleared
+            trusted = device_props.Get(self.__BLUEZ_SERVICE + '.Device1', 'Trusted')
+            if not trusted:
+                # Log successful untrusing of the device
+                self.__logger.info(f"Device {mac} untrusted")
+                
+                # Set return value to True on success
+                ret_code = True
+            
+            else:
+                # Log failure to untrust the device
+                self.__logger.error(f"Failed to unset trusted property for {mac}")
+        
+        # Catch D-Bus exceptions during untrust attempt
+        except dbus.exceptions.DBusException as e:
+            # Log unsuccessful attempt to untrust the device with detailed context
+            self.__logger.error(f"untrust failed for {mac}: {str(e)}")
+        
+        finally:
+            # Return the result of the untrust attempt
+            return ret_code
     
     def connect(self, mac: str, fs: int) -> bool:
-        """Connect to a Bluetooth device and set up audio routing"""
+        """
+        Connect to a Bluetooth device and establish audio routing.
+        
+        Parameters
+        ----------
+        mac : str
+            Device MAC address to connect to
+        fs : int
+            Sample rate for audio streaming (e.g., 16000 Hz)
+            
+        Returns
+        -------
+        bool
+            True if connection and audio routing successful, False otherwise
+        """
+
+        # Set return value to False by default in case of failure
+        ret_code = False
+
+        # Attempt to connect to the Bluetooth device
         try:
+            # Check if already connected to the same device
             if self.__connected_mac == mac:
+                # Log that we are already connected to this device and treat as success
                 self.__logger.info(f"Already connected to {mac}")
-                return True
 
-            if self.__connected_mac is not None:
+                # Reset failure counter on success
+                self.__consecutive_failures = 0
+
+                # Set return value to True since we are already connected to the target device
+                ret_code = True
+            
+            # Prevent connecting to multiple devices simultaneously
+            elif self.__connected_mac is not None:
+
+                # Log that we are already connected to a different device and treat as failure
                 self.__logger.warning(f"Already connected to {self.__connected_mac}")
-                return False
 
-            device = self.__get_device(mac)
-            device.Connect(timeout=30000)  # 30 second timeout for connection
+                # Increment failure counter since we cannot connect to multiple devices at once
+                self.__consecutive_failures += 1
+
+                # Check pattern of consecutive failures
+                if self.__consecutive_failures >= self.__FAILURE_THRESHOLD:
+                    # Mark as hardfault if multiple unexpected errors occur
+                    self.__hardfault = True
+
+                    # Log hardfault condition with context about multiple connection attempts
+                    self.__logger.error(f"BT interface hardfault")
             
-            # Find the PulseAudio sink for this device
-            sink_name = self.__get_pulseaudio_sink(mac)
-            if not sink_name:
-                self.__logger.error(f"No PulseAudio sink found for {mac}")
-                return False
-            
-            # Start persistent paplay process for audio streaming
-            try:
-                self.__paplay_process = subprocess.Popen(
-                    [
-                        'paplay',
-                        '--device', sink_name,
-                        '--format', 's16le',
-                        '--rate', str(fs),
-                        '--channels', '1',
-                        '--raw'
-                    ],
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.PIPE
-                )
-                self.__logger.info(f"Started paplay process for {sink_name}")
-            except FileNotFoundError:
-                self.__logger.error("paplay command not found. Install pulseaudio-utils.")
-                return False
-            
-            self.__pulseaudio_sink = sink_name
-            self.__connected_mac = mac
-            
-            self.__logger.info(f"Connected to {mac} with PulseAudio sink {sink_name}")
-            return True
-            
+            else:
+                # Get device interface
+                device = self.__get_device(mac)
+
+                # Initiate connection with 30 second timeout
+                device.Connect(timeout=30000)
+                
+                # Find the PulseAudio sink corresponding to this Bluetooth device
+                sink_name = self.__get_pulseaudio_sink(mac)
+
+                # Check if a valid PulseAudio sink was found for the device
+                if not sink_name:
+                    # Log that no sink was found for the device and treat as failure
+                    self.__logger.error(f"No PulseAudio sink found for {mac}")
+
+                    # Increment failure counter since we cannot route audio without a sink
+                    self.__consecutive_failures += 1
+
+                    # Check pattern of consecutive failures
+                    if self.__consecutive_failures >= self.__FAILURE_THRESHOLD:
+                        # Mark as hardfault if multiple unexpected errors occur
+                        self.__hardfault = True
+
+                        # Log hardfault condition with context about multiple connection attempts
+                        self.__logger.error(f"BT interface hardfault")
+                
+                else:
+                    # Attempt to start persistent paplay process for continuous audio streaming
+                    try:
+                        # Start paplay with appropriate parameters for raw audio streaming
+                        self.__paplay_process = subprocess.Popen(
+                            [
+                                'paplay',
+                                '--device', sink_name,
+                                '--format', 's16le',
+                                '--rate', str(fs),
+                                '--channels', '1',
+                                '--raw'
+                            ],
+                            stdin=subprocess.PIPE,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.PIPE
+                        )
+
+                        # Log successful start of paplay process
+                        self.__logger.info(f"Started paplay process for {sink_name}")
+
+                        # Store PulseAudio sink and MAC for audio writing and cleanup
+                        self.__pulseaudio_sink = sink_name
+                        self.__connected_mac = mac
+                        
+                        # Reset failure counter on successful connection
+                        self.__consecutive_failures = 0
+                        
+                        # Log successful connection and audio routing setup
+                        self.__logger.info(f"Connected to {mac} with PulseAudio sink {sink_name}")
+                        
+                        # Set return value to True on successful connection and audio routing setup
+                        ret_code = True
+                    
+                    # Catch FileNotFoundError if paplay command is not found
+                    except FileNotFoundError:
+                        # Log that paplay command is missing and treat as failure
+                        self.__logger.error("paplay command not found. Install pulseaudio-utils.")
+
+                        # Mark as hardfault since we cannot route audio without paplay
+                        self.__hardfault = True
+        
+        # Catch D-Bus exceptions during connection attempt
         except dbus.exceptions.DBusException as e:
+            # Device may already be connected, which is acceptable
             if "Already connected" in str(e):
+                # Log that we are already connected to this device and treat as success
                 self.__logger.info(f"Already connected to {mac}")
-                return True
-            self.__log_failure("connect", device=mac, error=str(e))
-            return False
+
+                # Reset failure counter on success
+                self.__consecutive_failures = 0
+
+                # Set return value to True since we are already connected to the target device
+                ret_code = True
+            
+            else:
+                # Log unsuccessful connection attempt with detailed context
+                self.__logger.error(f"Connect failed for {mac}: {str(e)}")
+
+                # Increment failure counter since connection attempt failed
+                self.__consecutive_failures += 1
+
+                # Check pattern of consecutive failures
+                if self.__consecutive_failures >= self.__FAILURE_THRESHOLD:
+                    # Mark as hardfault if multiple unexpected errors occur
+                    self.__hardfault = True
+
+                    # Log hardfault condition with context about multiple connection attempts
+                    self.__logger.error(f"BT interface hardfault")
+        
+        # Catch any other exceptions that may occur during the connection attempt
         except Exception as e:
+            # Log unexpected errors during connection attempt with detailed context
             self.__logger.error(f"Error setting up audio routing: {str(e)}")
-            return False
+
+            # Increment failure counter since connection attempt failed
+            self.__consecutive_failures += 1
+
+            # Check pattern of consecutive failures
+            if self.__consecutive_failures >= self.__FAILURE_THRESHOLD:
+                # Mark as hardfault if multiple unexpected errors occur
+                self.__hardfault = True
+
+                # Log hardfault condition with context about multiple connection attempts
+                self.__logger.error(f"BT interface hardfault")
+        
+        finally:
+            # Return the result of the connection attempt
+            return ret_code
     
     def disconnect(self, mac: str) -> bool:
-        """Disconnect from a Bluetooth device and close audio routing"""
+        """
+        Disconnect from a Bluetooth device and close audio routing.
+        
+        Parameters
+        ----------
+        mac : str
+            Device MAC address to disconnect from
+            
+        Returns
+        -------
+        bool
+            True if disconnection successful or not connected, False otherwise
+        """
+
+        # Set return value to False by default in case of failure
+        ret_code = False
+
+        # Attempt to disconnect from the Bluetooth device
         try:
-            # Close paplay process if running
+            # Close persistent paplay process if running
             if self.__paplay_process is not None:
+                # Attempt shutdown of paplay process
                 try:
+                    # Close stdin to signal process termination
                     self.__paplay_process.stdin.close()
+
+                    # Wait up to 2 seconds for process to finish
                     self.__paplay_process.wait(timeout=2)
+
+                    # Log successful closure of paplay process
                     self.__logger.info("Closed paplay process")
+
+                # Catch exceptions during paplay shutdown and log them with context
                 except Exception as e:
+                    # Log any errors that occur during paplay shutdown but continue with cleanup
                     self.__logger.warning(f"Error closing paplay process: {str(e)}")
+
+                    # Attempt to terminate the process if it is still running
                     try:
+                        # Terminate the paplay process if it is still running
                         self.__paplay_process.terminate()
+
+                    # Catch any exceptions during process termination
                     except:
+                        # Ignore any errors during process termination in a failure state
                         pass
+                
                 finally:
+                    # Clear process reference regardless of success/failure
                     self.__paplay_process = None
             
-            # Clean up audio routing variables
+            # Clear audio routing variables
             if self.__pulseaudio_sink is not None:
                 self.__pulseaudio_sink = None
                 self.__connected_mac = None
             
+            # Disconnect from device via D-Bus
             device = self.__get_device(mac)
             device.Disconnect()
+
+            # Log successful disconnection
             self.__logger.info(f"Disconnected from {mac}")
-            return True
             
+            # Set return value to True on success
+            ret_code = True
+        
+        # Catch D-Bus exceptions during disconnect attempt
         except dbus.exceptions.DBusException as e:
+            # Not connected or already disconnected is acceptable
             if "Not connected" in str(e):
+                # Log that device was not connected and treat as success
                 self.__logger.info(f"Device {mac} not connected")
-                return True
-            self.__log_failure("disconnect", device=mac, error=str(e))
-            return False
+                
+                # Set return value to True since device is effectively disconnected
+                ret_code = True
+            
+            else:
+                # Log unsuccessful disconnection attempt with detailed context
+                self.__logger.error(f"disconnect failed for {mac}: {str(e)}")
+        
+        finally:
+            # Return the result of the disconnect attempt
+            return ret_code
     
     def info(self, mac: str) -> dict:
-        """Get device information"""
+        """
+        Get device information via D-Bus.
+        
+        Parameters
+        ----------
+        mac : str
+            Device MAC address
+            
+        Returns
+        -------
+        dict
+            Device properties (Name, Address, Paired, Trusted, Connected, etc.)
+            Empty dict if retrieval fails
+        """
+
+        # Set return value to empty dict by default in case of failure
+        device_info = {}
+
+        # Attempt to retrieve device information via D-Bus
         try:
+            # Get D-Bus Properties interface for the device
             device_props = dbus.Interface(
-                self.__bus.get_object(BLUEZ_SERVICE, DEVICE_PREFIX + mac.replace(':', '_').upper()),
+                self.__bus.get_object(self.__BLUEZ_SERVICE, self.__DEVICE_PREFIX + mac.replace(':', '_').upper()),
                 'org.freedesktop.DBus.Properties'
             )
             
-            # Get all properties
-            all_props = device_props.GetAll(BLUEZ_SERVICE + '.Device1')
+            # Retrieve all properties for the device via D-Bus
+            all_props = device_props.GetAll(self.__BLUEZ_SERVICE + '.Device1')
             
+            # Log retrieved device information with context about the target MAC address
             self.__logger.info(f"Retrieved info for {mac}")
-            return dict(all_props)
+
+            # Convert D-Bus properties to regular dict for easier access
+            device_info = dict(all_props)
             
         except dbus.exceptions.DBusException as e:
-            self.__log_failure("info", device=mac, error=str(e))
-            return {}
+            # Log unsuccessful retrieval of device information with detailed context
+            self.__logger.error(f"info failed for {mac}: {str(e)}")
+        
+        finally:
+            # Return the retrieved device information or empty dict if retrieval failed
+            return device_info
     
     def devices(self, audio_sink: bool = True) -> dict:
-        """Get list of paired audio sink devices"""
+        """
+        Get list of paired Bluetooth devices.
+        
+        Parameters
+        ----------
+        audio_sink : bool, optional
+            If True, only return audio sink devices. Default is True.
+            
+        Returns
+        -------
+        dict
+            Dictionary with MAC addresses as keys and device names as values
+            Empty dict if retrieval fails
+        """
+
+        # Set return value to empty dict by default in case of failure
+        devices_dict = {}
+
+        # Attempt to retrieve list of paired devices via D-Bus
         try:
-            # Get the Managed Objects from ObjectManager
+            # Get D-Bus ObjectManager interface to query all Bluez objects
             om = dbus.Interface(
-                self.__bus.get_object(BLUEZ_SERVICE, '/'),
+                self.__bus.get_object(self.__BLUEZ_SERVICE, '/'),
                 'org.freedesktop.DBus.ObjectManager'
             )
             
-            devices_dict = {}
+            # Retrieve all managed objects from Bluez daemon
             managed_objs = om.GetManagedObjects()
             
+            # Iterate through all objects looking for paired audio sink devices
             for path, interfaces in managed_objs.items():
-                device_iface = interfaces.get(BLUEZ_SERVICE + '.Device1')
+                # Check if this object has Device1 interface
+                device_iface = interfaces.get(self.__BLUEZ_SERVICE + '.Device1')
                 if device_iface:
-                    # Check if device is paired and is an audio sink
+                    # Filter for paired devices
                     if device_iface.get('Paired'):
+                        # Check if device is audio sink (or include all if audio_sink=False)
                         if self.__is_audio_sink(device_iface) or not audio_sink:
+                            # Extract MAC address and name
                             address = device_iface.get('Address')
                             name = device_iface.get('Name', 'Unknown')
                             devices_dict[address] = name
 
+            # Log discovered devices
             log_str = f"Found {len(devices_dict)} paired audio sinks:\n"
             for address, name in devices_dict.items():
                 log_str += f"\t{str(address)}: {name}\n"
             self.__logger.info(log_str)
-            return devices_dict
-            
+        
+        # Catch D-Bus exceptions during device listing attempt
         except dbus.exceptions.DBusException as e:
-            self.__log_failure("devices", error=str(e))
-            return {}
+            # Log unsuccessful retrieval of paired devices with detailed context
+            self.__logger.error(f"Failed to list devices: {str(e)}")
+        
+        finally:
+            # Return the dictionary of paired devices or empty dict if retrieval failed
+            return devices_dict
     
     def __is_audio_sink(self, device_props) -> bool:
-        """Check if a device is an audio sink"""
-        # Audio Sink UUID: 0000110b-0000-1000-8000-00805f9b34fb
+        """
+        Check if a device is an audio sink.
+        
+        Parameters
+        ----------
+        device_props : dict
+            Device properties from D-Bus GetAll()
+            
+        Returns
+        -------
+        bool
+            True if device is an audio sink, False otherwise
+        """
+        # Set return value to False by default in case of failure
+        is_sink = False
+
+        # Audio Sink service UUID for A2DP
         audio_sink_uuid = '0000110b-0000-1000-8000-00805f9b34fb'
 
-        # Check if device has the Audio Sink UUID
+        # Major audio device class for fallback check
+        audio_major_class = 0x04
+
+        # Check if device advertises the Audio Sink UUID
         uuids = device_props.get('UUIDs', [])
         if audio_sink_uuid in uuids:
-            return True
+            is_sink = True
 
-        # Check major device class (0x04 = Audio/Video device)
+        # Alternative check: Major device class 0x04 = Audio device
         device_class = device_props.get('Class', 0)
         major_device_class = (device_class >> 8) & 0xFF
-        if major_device_class == 0x04:
-            return True
+        if major_device_class == audio_major_class:
+            is_sink = True
         
-        # If neither check passed, it's not an audio sink
-        return False
+        # Return the result of the audio sink check
+        return is_sink
     
     def scan(self, duration: int, audio_sink: bool = True) -> dict:
-        """Scan for nearby Bluetooth devices"""
-        try:
-            adapter = self.__get_adapter()
+        """
+        Scan for nearby Bluetooth devices.
+        
+        Parameters
+        ----------
+        duration : int
+            Scan duration in seconds
+        audio_sink : bool, optional
+            If True, only return audio sink devices. Default is True.
             
-            # Start discovery
-            adapter.StartDiscovery()
+        Returns
+        -------
+        dict
+            Dictionary with MAC addresses as keys and device names as values
+            Empty dict if scan fails
+        """
+
+        # Set return value to empty dict by default in case of failure
+        devices_dict = {}
+
+        # Attempt to perform Bluetooth device discovery via D-Bus
+        try:
+            # Start Bluetooth device discovery via D-Bus
+            self.__adapter.StartDiscovery()
+
+            # Log that discovery has started with context about the scan duration
             self.__logger.info(f"Starting discovery for {duration} seconds")
             
-            # Wait for the specified duration
+            # Wait for devices to advertise themselves
             time.sleep(duration)
             
-            # Stop discovery
+            # Attempt to stop discovery after the specified duration to save power
             try:
-                adapter.StopDiscovery()
+                # Stop discovery to save power
+                self.__adapter.StopDiscovery()
+
+            # Catch D-Bus exceptions during StopDiscovery and log them with context
             except dbus.exceptions.DBusException as e:
+                # It's okay if discovery wasn't running
                 if "No discovery started" not in str(e):
+                    # Log that discovery was not running when attempting to stop it
+                    self.__logger.info("Discovery was not running when attempting to stop it")
+
+                else:
+                    # Log errors that occur during StopDiscovery with detailed context
                     self.__logger.error(f"Error stopping discovery: {str(e)}")
             
-            # Get discovered devices
+            # Get D-Bus ObjectManager to query discovered devices
             om = dbus.Interface(
-                self.__bus.get_object(BLUEZ_SERVICE, '/'),
+                self.__bus.get_object(self.__BLUEZ_SERVICE, '/'),
                 'org.freedesktop.DBus.ObjectManager'
             )
-            
-            devices_dict = {}
+
+            # Retrieve all managed objects from Bluez
             managed_objs = om.GetManagedObjects()
             
+            # Filter for audio sink devices discovered during scan
             for path, interfaces in managed_objs.items():
-                device_iface = interfaces.get(BLUEZ_SERVICE + '.Device1')
+                # Check if this object has Device1 interface
+                device_iface = interfaces.get(self.__BLUEZ_SERVICE + '.Device1')
                 if device_iface:
-                    # Filter for audio sink devices only
+                    # Include only audio sink devices (or all if audio_sink=False)
                     if self.__is_audio_sink(device_iface) or not audio_sink:
+                        # Extract MAC address and name
                         address = device_iface.get('Address')
                         name = device_iface.get('Name', 'Unknown')
                         devices_dict[address] = name
 
+            # Log discovered devices
             log_str = f"Discovery found {len(devices_dict)} audio sink devices:\n"
             for address, name in devices_dict.items():
                 log_str += f"\t{str(address)}: {name}\n"
             self.__logger.info(log_str)
-            return devices_dict
-            
+        
+        # Catch D-Bus exceptions during discovery attempt
         except dbus.exceptions.DBusException as e:
-            self.__log_failure("scan", error=str(e))
-            return {}
+            # Log unsuccessful discovery attempt with detailed context
+            self.__logger.error(f"scan failed: {str(e)}")
+        
+        finally:
+            # Return the dictionary of discovered devices or empty dict if discovery failed
+            return devices_dict
     
     def write_audio(self, audio_bytes: bytes) -> bool:
         """
-        Write raw audio bytes to the connected Bluetooth A2DP device using PulseAudio.
+        Write raw audio bytes to the connected Bluetooth A2DP device.
         
-        Device must be connected via connect() first. Uses persistent paplay process
-        for low-latency continuous audio streaming to Bluetooth devices.
-        
-        Args:
-            audio_bytes: Raw audio data (int16 PCM format, 16kHz, mono)
+        Parameters
+        ----------
+        audio_bytes : bytes
+            Raw audio data (int16 PCM format, 16kHz, mono)
             
-        Returns:
-            True if audio was written successfully, False otherwise
+        Returns
+        -------
+        bool
+            True if audio written successfully, False otherwise
         """
+
+        # Set return value to False by default in case of failure
+        ret_code = False
+
+        # Attempt to write audio data to the connected device
         try:
             # Check if device is connected and paplay is running
             if self.__paplay_process is None or self.__connected_mac is None:
+                # Log that no device is connected and treat as failure
                 self.__logger.error("No device connected. Call connect() first.")
-                return False
+
+                # Increment failure counter since audio cannot be written without connection
+                self.__consecutive_failures += 1
+
+                # Check pattern of consecutive failures
+                if self.__consecutive_failures >= self.__FAILURE_THRESHOLD:
+                    # Mark as hardfault if multiple unexpected errors occur
+                    self.__hardfault = True
             
-            # Check if process is still alive
-            if self.__paplay_process.poll() is not None:
+            # Check if process is still alive by checking exit status
+            elif self.__paplay_process.poll() is not None:
+                # Log that paplay process has terminated unexpectedly and treat as failure
                 self.__logger.error("paplay process terminated unexpectedly")
+
+                # Clear process reference since it is no longer valid
                 self.__paplay_process = None
-                return False
+
+                # Increment failure counter since audio cannot be written without paplay
+                self.__consecutive_failures += 1
+
+                # Check pattern of consecutive failures
+                if self.__consecutive_failures >= self.__FAILURE_THRESHOLD:
+                    # Mark as hardfault if multiple unexpected errors occur
+                    self.__hardfault = True
             
-            try:
-                # Write audio data to paplay's stdin
-                self.__paplay_process.stdin.write(audio_bytes)
-                self.__paplay_process.stdin.flush()
-                return True
+            else:
+                # Attempt to write audio data to paplay's stdin for streaming
+                try:
+                    # Write audio data to paplay's stdin pipe for continuous streaming
+                    self.__paplay_process.stdin.write(audio_bytes)
+
+                    # Flush immediately to avoid buffering delays in audio output
+                    self.__paplay_process.stdin.flush()
+                    
+                    # Reset failure counter on successful audio write
+                    self.__consecutive_failures = 0
+
+                    # Log successful audio write with context about the number of bytes written
+                    ret_code = True
                 
-            except BrokenPipeError:
-                self.__logger.error("paplay pipe broken (device may have disconnected)")
-                self.__paplay_process = None
-                return False
-                
+                # Catch BrokenPipeError to handle cases where paplay process has closed its stdin
+                except BrokenPipeError:
+                    # Log that the pipe to paplay is broken, which likely means the device disconnected
+                    self.__logger.error("paplay pipe broken (device may have disconnected)")
+
+                    # Clear process reference since it is no longer valid
+                    self.__paplay_process = None
+
+                    # Increment failure counter since audio cannot be written without paplay
+                    self.__consecutive_failures += 1
+
+                    # Check pattern of consecutive failures
+                    if self.__consecutive_failures >= self.__FAILURE_THRESHOLD:
+                        # Mark as hardfault if multiple unexpected errors occur
+                        self.__hardfault = True
+        
+        # Catch general exceptions during audio write attempt        
         except Exception as e:
+            # Log any unexpected errors that occur during the audio write attempt
             self.__logger.error(f"Error writing audio to PulseAudio: {str(e)}")
-            return False
+
+            # Increment failure counter since audio write attempt failed
+            self.__consecutive_failures += 1
+
+            # Check pattern of consecutive failures
+            if self.__consecutive_failures >= self.__FAILURE_THRESHOLD:
+                # Mark as hardfault if multiple unexpected errors occur
+                self.__hardfault = True
+        
+        finally:
+            # Return the result of the audio write attempt
+            return ret_code
     
-    def __get_pulseaudio_sink(self, mac: str) -> str:
+    def __check_sink_with_glib(self, *args, **kwargs) -> None:
         """
-        Get the PulseAudio sink name for a Bluetooth device MAC address.
+        Check for PulseAudio sink asynchronously via GLib during PipeWire object changes.
         
-        Uses pactl to query available Bluetooth sinks and find the one matching the MAC.
+        Parameters
+        ----------
+        *args : tuple
+            Variable arguments from D-Bus signal
+        **kwargs : dict
+            Keyword arguments from D-Bus signal
         
-        Args:
-            mac: Bluetooth device MAC address
-            
-        Returns:
-            PulseAudio sink name if found, None otherwise
+        Returns
+        -------
+        None
         """
+        # Log that a PipeWire change was detected
+        self.__logger.debug("PipeWire configuration change detected, checking for sink")
+
+        # Try to query PulseAudio sinks and find the one corresponding to our Bluetooth device
         try:
-            # Use pactl to list sinks
-            result = subprocess.run(
-                ['pactl', 'list', 'sinks'],
+            # Query PulseAudio sinks
+            sink_result = subprocess.run(
+                ['pactl', 'list', 'short', 'sinks'],
                 capture_output=True,
                 text=True,
                 timeout=5
             )
-            
-            if result.returncode != 0:
-                self.__logger.error(f"pactl error: {result.stderr}")
-                return None
-            
-            # Normalize MAC address to match PulseAudio format (with underscores)
-            mac_normalized = mac.replace(':', '_')
-            
-            # Parse pactl output to find Bluetooth sink
-            # Look for lines with sink names that contain the MAC address
-            for line in result.stdout.split('\n'):
-                line = line.strip()
                 
-                # Look for Name field in sink properties
-                if line.startswith('Name:'):
-                    # Extract the sink name
-                    sink_name = line.split('Name:', 1)[1].strip()
-                    
-                    # Check if this is a Bluetooth sink with our MAC address
-                    if 'bluez' in sink_name.lower() and mac_normalized in sink_name:
-                        self.__logger.info(f"Found PulseAudio sink: {sink_name}")
-                        return sink_name
-            
-            self.__logger.warning(f"No PulseAudio sink found for {mac}. Available sinks:\n{result.stdout}")
-            return None
-            
-        except FileNotFoundError:
-            self.__logger.error("pactl command not found. Install pulseaudio-utils.")
-            return None
-        except subprocess.TimeoutExpired:
-            self.__logger.error("pactl command timed out")
-            return None
+            # Check if pactl command executed successfully
+            if sink_result.returncode == 0:
+                # Parse pactl output to find matching Bluetooth sink
+                for line in sink_result.stdout.splitlines():
+                    # Parse line into parts and check if it contains a sink name
+                    parts = line.split('\t')
+                    if len(parts) < 2:
+                        continue
+                    name = parts[1].strip()
+
+                    # Match bluez sink by normalized MAC token regardless of case
+                    if 'bluez' in name.lower() and self.__mac_normalized in name.lower():
+                        # Log that we found the sink with context about the sink name
+                        self.__logger.info(f"Found PulseAudio sink via async check: {name}")
+
+                        # Store the found sink name
+                        self.__sink_found = name
+
+                        # Stop the search for the sink
+                        self.__sink_search_active = False
+
+                        # Break out of loop since we found the sink we were looking for
+                        break
+                
         except Exception as e:
-            self.__logger.error(f"Error querying PulseAudio sinks: {str(e)}")
-            return None
+            # Log any errors during async sink check
+            self.__logger.debug(f"Error checking sink asynchronously: {str(e)}")
+
+            # Stop the search for the sink to avoid infinite searching in case of errors
+            self.__sink_search_active = False
+    
+    def __setup_sink_listener_and_wait(self, mac: str, timeout_ms: int = 15000) -> Optional[str]:
+        """
+        Set up D-Bus signal listener for PipeWire sink creation and wait for sink.
+        
+        Parameters
+        ----------
+        mac : str
+            Bluetooth device MAC address
+        timeout_ms : int
+            Maximum time to wait for sink creation in milliseconds (default 15 seconds)
+            
+        Returns
+        -------
+        Optional[str]
+            Sink name if found, None if timeout or error occurs
+        """    
+        # Store normalized MAC for use in signal handler
+        self.__mac_normalized = mac.replace(':', '_').lower()
+        self.__sink_found = None
+        self.__sink_search_active = True
+        self.__sink_signal_match = None
+        
+        try:
+            # Add signal handler for property changes so sink discovery is event-driven.
+            self.__sink_signal_match = self.__bus.add_signal_receiver(
+                self.__check_sink_with_glib,
+                signal_name='PropertiesChanged',
+                dbus_interface='org.freedesktop.DBus.Properties'
+            )
+            
+            # Log that async listener is set up
+            self.__logger.info("Set up async D-Bus listener for sink creation")
+
+            # Run one immediate check in case the sink already exists.
+            self.__check_sink_with_glib()
+
+            if self.__sink_found:
+                # Log that sink was found immediately without waiting
+                self.__logger.info("Sink found immediately without waiting")
+            
+            else:
+                # Wait for sink to be found or timeout
+                ctx = GLib.MainContext.default()
+                deadline = time.time() + (timeout_ms / 1000.0)
+                
+                while self.__sink_search_active and time.time() < deadline:
+                    # Process pending D-Bus signals and timers in non-blocking iteration
+                    ctx.iteration(False)
+
+                    # Break out of loop if search finished to stop waiting
+                    if not self.__sink_search_active:
+                        break
+                    
+                    # Small sleep to avoid busy-waiting
+                    time.sleep(0.05)
+                
+                # Check if sink was found
+                if self.__sink_found:
+                    # Log that sink was found successfully
+                    elapsed_sec = max(0.0, (timeout_ms / 1000.0) - max(0.0, deadline - time.time()))
+                    self.__logger.info(f"Sink found in {elapsed_sec:.3f}s")
+                else:
+                    # Log that no sink was found
+                    self.__logger.warning(f"No sink found within {timeout_ms} ms")
+            
+        except Exception as e:
+            # Log error and clean up
+            self.__logger.error(f"Error setting up async sink listener: {str(e)}")
+
+            # Ensure we stop searching for the sink in case of error
+            self.__sink_search_active = False
+
+        finally:
+            # Remove signal subscription for this discovery attempt.
+            if self.__sink_signal_match is not None:
+                try:
+                    self.__sink_signal_match.remove()
+                except Exception:
+                    pass
+                self.__sink_signal_match = None
+
+            # Return the result of the sink query attempt
+            return self.__sink_found
+    
+    def __get_pulseaudio_sink(self, mac: str) -> str:
+        """
+        Get the PulseAudio sink name for a Bluetooth device using async D-Bus signal listening.
+        
+        Parameters
+        ----------
+        mac : str
+            Bluetooth device MAC address
+            
+        Returns
+        -------
+        str
+            PulseAudio sink name if found, None otherwise
+        """
+
+        # Set return value to None by default in case of failure
+        sink_name = None
+
+        # Attempt to use async D-Bus listener for sink creation
+        try:
+            # Use async listener to wait for sink (max 15 seconds)
+            sink_name = self.__setup_sink_listener_and_wait(mac, timeout_ms=15000)
+            
+            # Check if sink was found
+            if sink_name:
+                # Log that sink was found successfully
+                self.__logger.info(f"Successfully found sink via async discovery: {sink_name}")
+            else:
+                # Log that sink was not found
+                self.__logger.warning(f"No PulseAudio sink found for {mac} via async discovery")
+        
+        # Catch FileNotFoundError if pactl command is not found
+        except FileNotFoundError:
+            # Log that pactl command is missing
+            self.__logger.error("pactl command not found. Install pulseaudio-utils.")
+
+            # Mark as hardfault since we cannot route audio without pactl
+            self.__hardfault = True
+
+        # Catch any other exceptions that may occur
+        except Exception as e:
+            # Log any unexpected errors that occur during async sink discovery
+            self.__logger.error(f"Error in async sink discovery: {str(e)}")
+        
+        finally:
+            # Return the result of the sink query attempt
+            return sink_name
+    
+    @property
+    def hardfault(self) -> bool:
+        """
+        Check if the Bluetooth interface has encountered an unrecoverable error.
+
+        Parameters
+        ----------
+        None
+        
+        Returns
+        -------
+        bool
+            True if a hardfault condition has been detected, False otherwise
+        """
+
+        # Return the current hardfault status
+        return self.__hardfault

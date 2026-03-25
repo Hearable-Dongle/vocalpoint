@@ -1,24 +1,47 @@
-"""USB Audio Interface using PyAudio for real-time audio capture."""
-
-import pyaudio
+# Standard imports
+from typing import Optional
 import logging
 import subprocess
-from typing import Optional
+
+# Third-party imports
+import pyaudio
 
 
 class USB_Interface:
-    """Capture audio from USB device using PyAudio."""
+    """
+    Interface for capturing audio from USB device using PyAudio.
+    """
 
-    def __init__(self, logger: logging.Logger, source: str, sample_rate: int, frame_size: int) -> None:
+    # Define threshold for marking hardfault conditions based on consecutive operation failures
+    __FAILURE_THRESHOLD: int = 5
+
+    def __init__(
+        self,
+        logger: logging.Logger,
+        source: str,
+        sample_rate: int,
+        frame_size: int
+    ) -> None:
         """
-        Initialize USB audio interface.
+        Initialize USB interface.
         
-        Args:
-            logger: Logger instance
-            source: ALSA device name or PulseAudio source name
-            sample_rate: Sample rate in Hz (typically 16000)
-            frame_size: Number of samples per frame (typically 160)
+        Parameters
+        ----------
+        logger : logging.Logger
+            Logger instance for recording audio events and errors
+        source : str
+            Device name to match for audio source (ALSA or PulseAudio format)
+        sample_rate : int
+            Sample rate in Hz (typically 16000)
+        frame_size : int
+            Number of samples per frame (typically 160)
+
+        Returns
+        -------
+        None
         """
+
+        # Initialize instance variables
         self.__logger = logger
         self.__source = source
         self.__sample_rate = sample_rate
@@ -28,147 +51,329 @@ class USB_Interface:
         self.__device_index: Optional[int] = None
         self.__channels: int = 0
 
-    def __get_device_index(self) -> int:
-        """Get PyAudio device index for the USB source."""
-        if self.__audio is None:
-            raise RuntimeError("PyAudio not initialized. Call connect() first.")
+        # Define hardfault flag and error tracking
+        self.__hardfault: bool = False
+        self.__consecutive_failures: int = 0
 
-        # Try to find device by name
-        for i in range(self.__audio.get_device_count()):
-            info = self.__audio.get_device_info_by_index(i)
-            device_name = info['name']
-            
-            # Match against source name (handle both ALSA and PulseAudio names)
-            if self.__source in device_name.upper() or device_name.upper() in self.__source:
-                self.__logger.info(f"Found USB device at index {i}: {device_name}")
-                return i
+    def __get_device_index(self) -> Optional[int]:
+        """
+        Get PyAudio device index for the USB source.
         
-        # If not found, log available devices and raise error
-        self.__logger.error(f"USB device '{self.__source}' not found. Available devices:")
-        for i in range(self.__audio.get_device_count()):
-            info = self.__audio.get_device_info_by_index(i)
-            self.__logger.error(f"  [{i}] {info['name']} (channels: {info['maxInputChannels']})")
+        Parameters
+        ----------
+        None
         
-        raise RuntimeError(f"USB device '{self.__source}' not found")
+        Returns
+        -------
+        int
+            PyAudio device index for the USB source
+        """
+
+        # Set device index to none by default
+        device_idx = None
+
+        # Check if PyAudio is initialized
+        if self.__audio is None:
+            # Log error when PyAudio is not initialized
+            self.__logger.error("PyAudio not initialized: connect() must be called first.")
+
+        else:
+            # Iterate through available PyAudio devices
+            for idx in range(self.__audio.get_device_count()):
+                # Get device info and parse name
+                info = self.__audio.get_device_info_by_index(idx)
+                device_name = info['name']
+                
+                # Check if name matches the configured source
+                if self.__source in device_name.lower() or device_name.lower() in self.__source:
+                    # Log found device
+                    self.__logger.info(f"Found USB device at index {idx}: {device_name}")
+
+                    # Set device index and break loop
+                    device_idx = idx
+                    break
+            else:
+                # Log error when no matching device found
+                log_str = f"USB device '{self.__source}' not found:"
+                for i in range(self.__audio.get_device_count()):
+                    info = self.__audio.get_device_info_by_index(i)
+                    log_str += f"\n\t[{i}] {info['name']} (channels: {info['maxInputChannels']})"
+                self.__logger.error(log_str)
+
+            # Return the found device index or None if not found
+            return device_idx
 
     def connect(self) -> bool:
         """
         Initialize PyAudio and open audio stream from USB device.
+
+        Parameters
+        ----------
+        None
         
-        Returns:
+        Returns
+        -------
+        bool
             True if connection successful, False otherwise
         """
+
+        # Set return code to True by default
+        ret_code = True
+
+        # Try to initialize PyAudio and open stream
         try:
-            # Initialize PyAudio
+            # Initialize PyAudio instance
             self.__audio = pyaudio.PyAudio()
+
+            # Log successful initialization
             self.__logger.info("PyAudio initialized")
             
-            # Get device index
+            # Get device index for the configured source
             self.__device_index = self.__get_device_index()
+
+            # Check if device was found
+            if self.__device_index is None:
+
+                # Mark as hardfault since USB device is unavailable
+                self.__hardfault = True
+
+                # Log hardfault condition with context about missing device at initialization
+                self.__logger.error("USB interface hardfault")
+                
+                # 
+                self.disconnect()
+                return False
+
+            # Parse device info
             device_info = self.__audio.get_device_info_by_index(self.__device_index)
+
+            # Get number of channels
             self.__channels = int(device_info['maxInputChannels'])
             
-            # Open audio stream
+            # Open audio stream with the detected device index and parameters
             self.__stream = self.__audio.open(
-                format=pyaudio.paInt16,
-                channels=self.__channels,
-                rate=self.__sample_rate,
-                input=True,
-                input_device_index=self.__device_index,
-                frames_per_buffer=self.__frame_size
+                format = pyaudio.paInt16,
+                channels = self.__channels,
+                rate = self.__sample_rate,
+                input = True,
+                input_device_index = self.__device_index,
+                frames_per_buffer = self.__frame_size
             )
             
-            self.__logger.info(
-                f"USB_Interface connected: {device_info['name']} "
-                f"({self.__channels} channels, {self.__sample_rate}Hz, {self.__frame_size} frame size)"
-            )
-            return True
-            
+            # Log successful connection
+            self.__logger.info(f"USB interface connected: {device_info['name']}")
+        
+        # Catch exceptions during connection attempt
         except Exception as e:
+            # Log unsuccessful connection
             self.__logger.error(f"Failed to connect USB interface: {str(e)}")
-            self.disconnect()
-            return False
 
-    def get_audio(self) -> Optional[bytes]:
+            # Attempt to cleanup resources if connection fails
+            self.disconnect()
+
+            # Set return code to false when exceptions occur
+            ret_code = False
+        
+        # Return the result of the connection attempt
+        return ret_code
+
+    def disconnect(self) -> bool:
+        """
+        Close audio stream and cleanup resources.
+
+        Parameters
+        ----------
+        None
+        
+        Returns
+        -------
+        bool
+            True if cleanup was successful, False otherwise
+        """
+
+        # Set return code to True by default
+        ret_code = True
+
+        # Try to deinitialize PyAudio and close stream
+        try:
+            # Check if stream is open
+            if self.__stream is not None:
+                # Attempt to close the stream
+                try:
+                    # Stop stream
+                    self.__stream.stop_stream()
+
+                    # Close stream
+                    self.__stream.close()
+
+                    # Log successful stream closure
+                    self.__logger.info("USB stream closed")
+
+                # Catch exceptions during closure attempt
+                except Exception as e:
+                    # Log errors during stream closure
+                    self.__logger.error(f"Error closing stream: {str(e)}")
+
+                    # Set return code to false when exceptions occur
+                    ret_code = False
+
+                # Set stream to None regardless of closure success
+                finally:
+                    # Ensure stream is set to None to prevent further use
+                    self.__stream = None
+            
+            # Check if PyAudio instance exists
+            if self.__audio is not None:
+                # Attempt to terminate PyAudio
+                try:
+                    # Terminate PyAudio instance
+                    self.__audio.terminate()
+
+                    # Log successful termination
+                    self.__logger.info("PyAudio terminated")
+
+                # Catch exceptions during termination attempt
+                except Exception as e:
+                    # Log errors during PyAudio termination
+                    self.__logger.error(f"Error terminating PyAudio: {str(e)}")
+
+                    # Set return code to false when exceptions occur
+                    ret_code = False
+
+                # Set PyAudio instance to None regardless of termination success
+                finally:
+                    # Ensure PyAudio instance is set to None to prevent further use
+                    self.__audio = None
+            
+            # Log successful disconnection
+            self.__logger.info("USB interface disconnected")
+        
+        # Catch any unexpected exceptions during cleanup
+        except Exception as e:
+            # Log unexpected errors during disconnection
+            self.__logger.error(f"Unexpected error during disconnect: {str(e)}")
+            
+        finally:
+            # Return the result of the disconnection attempt
+            return ret_code
+
+    def read_audio(self) -> Optional[bytes]:
         """
         Read one frame of audio from USB device.
+
+        Parameters
+        ----------
+        None
         
-        Returns:
-            Audio frame as bytes (int16 samples), or None if error occurs
-            
-        Raises:
-            RuntimeError: If stream is not connected
+        Returns
+        -------
+        Optional[bytes]
+            Audio frame as bytes (int16 format), or None if error occurs
         """
+
+        # Set return value to None by default
+        data = None
+
+        # Check if stream is open before attempting to read
         if self.__stream is None:
+            # Log error when stream is not open
             self.__logger.error("USB interface not connected. Call connect() first.")
-            return None
 
-        try:
-            # Read one frame from stream
-            # Note: exception_on_overflow parameter is not supported in all PyAudio versions
+        else:
+            # Attempt to read audio data from the stream with error handling
             try:
+                # Read a frame of audio data from the stream
                 data = self.__stream.read(self.__frame_size, exception_on_overflow=False)
-            except TypeError:
-                # Fallback if exception_on_overflow is not supported
-                data = self.__stream.read(self.__frame_size)
-            return data
-        except OSError as e:
-            # Handle stream errors gracefully
-            if "Input overflowed" in str(e) or "Stream closed" in str(e):
-                self.__logger.debug(f"USB stream warning: {str(e)}")
-                # Return None to skip this frame but keep stream open
-                return None
-            else:
-                self.__logger.error(f"Error reading audio from USB: {str(e)}")
-                return None
-        except Exception as e:
-            self.__logger.error(f"Error reading audio from USB: {str(e)}")
-            return None
 
-    def read_frame(self) -> Optional[bytes]:
-        """
-        Read one frame of audio from USB device (alias for get_audio).
-        
-        Returns:
-            Audio frame as bytes (int16 samples), or None if error occurs
-        """
-        try:
-            return self.get_audio()
-        except Exception:
-            return None
+                # Reset failure counter on successful read
+                self.__consecutive_failures = 0
+            
+            # Catch OSError which may occur during stream read attempts
+            except OSError as e:
+                # Increment consecutive failure counter
+                self.__consecutive_failures += 1
+                
+                # Check for common stream errors like input overflow or stream closure
+                if "Input overflowed" in str(e):
+                    # Input overflow is recoverable - log at debug level
+                    self.__logger.debug(f"USB stream read warning: Input overflow")
+
+                elif "Stream closed" in str(e):
+                    # Stream closed indicates device was disconnected or forcibly closed
+                    self.__logger.warning(f"USB stream read warning: Stream closed")
+                    
+                    # Check pattern of consecutive failures
+                    if self.__consecutive_failures >= self.__FAILURE_THRESHOLD:
+                        # Mark as hardfault if multiple stream closures occur
+                        self.__hardfault = True
+
+                        # Log hardfault condition with context about the stream closure pattern
+                        self.__logger.error("USB interface hardfault")
+
+                else:
+                    # Other OSErrors may indicate hardware-level failures
+                    self.__logger.error(f"Error reading audio from USB: {str(e)}")
+
+                    # Check pattern of consecutive failures
+                    if self.__consecutive_failures >= self.__FAILURE_THRESHOLD:
+                        # Mark as hardfault if multiple read errors occur
+                        self.__hardfault = True
+
+                        # Log hardfault condition with context about the read error pattern
+                        self.__logger.error(f"USB interface hardfault")
+
+            # Catch any other exceptions that may occur during the read attempt
+            except Exception as e:
+
+                # Increment consecutive failure counter for unexpected exceptions
+                self.__consecutive_failures += 1
+
+                # Log unexpected errors during audio read attempts
+                self.__logger.error(f"Error reading audio from USB: {str(e)}")
+
+                # Check pattern of consecutive failures
+                if self.__consecutive_failures >= self.__FAILURE_THRESHOLD:
+                    # Mark as hardfault if multiple unexpected errors occur
+                    self.__hardfault = True
+
+                    # Log hardfault condition with context about the unexpected error pattern
+                    self.__logger.error(f"USB interface hardfault")
+
+        # Return the audio data or None when errors occur
+        return data
 
     @property
     def channels(self) -> int:
-        """Get number of channels in the USB device."""
+        """
+        Get number of channels in the USB device.
+
+        Parameters
+        ----------
+        None
+        
+        Returns
+        -------
+        int
+            Number of input channels detected on the USB device
+        """
+
+        # Return the number of channels detected on the USB device
         return self.__channels
 
-    def disconnect(self) -> bool:
-        """Close audio stream and cleanup resources."""
-        try:
-            if self.__stream is not None:
-                try:
-                    self.__stream.stop_stream()
-                    self.__stream.close()
-                    self.__logger.info("Audio stream closed")
-                except Exception as e:
-                    self.__logger.error(f"Error closing stream: {str(e)}")
-                finally:
-                    self.__stream = None
-            
-            if self.__audio is not None:
-                try:
-                    self.__audio.terminate()
-                    self.__logger.info("PyAudio terminated")
-                except Exception as e:
-                    self.__logger.error(f"Error terminating PyAudio: {str(e)}")
-                finally:
-                    self.__audio = None
-            
-            return True
-        except Exception as e:
-            self.__logger.error(f"Error during disconnect: {str(e)}")
-            return False
+    @property
+    def hardfault(self) -> bool:
+        """
+        Get the hardfault status of the USB interface.
 
-    def __del__(self):
-        """Ensure cleanup on object destruction."""
-        self.disconnect()
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        bool
+            True if a hardfault condition has been detected, False otherwise
+        """
+
+        # Return the current hardfault status
+        return self.__hardfault
