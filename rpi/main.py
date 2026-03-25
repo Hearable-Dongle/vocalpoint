@@ -104,8 +104,6 @@ def main() -> int:
         cfg.logger.info("Starting async event loop for audio passthrough")
         main_loop.run()
 
-        return 0
-
     except KeyboardInterrupt:
         # Log interruption by user but not as an error
         cfg.logger.info("Interrupted by user")
@@ -119,7 +117,9 @@ def main() -> int:
         else:
             # Log if all interfaces stopped cleanly
             cfg.logger.info("All interfaces stopped cleanly")
-        # i2c.stop()
+
+        # Return 0 to indicate successful execution
+        return 0
 
 
 if __name__ == "__main__":
