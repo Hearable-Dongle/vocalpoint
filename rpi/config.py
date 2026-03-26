@@ -13,6 +13,7 @@ class Session_Config():
     __frame: int = 160
     __fs: int = 16000
     __timeout_ms: int = 15000
+    __volume: int = 100
     __deps: list[str] = [
         "pactl",
         "pw-loopback",
@@ -98,3 +99,8 @@ class Session_Config():
     def timeout_ms(self):
         # Return private timeout value in milliseconds
         return self.__timeout_ms
+
+    @property
+    def volume(self):
+        # Return private volume level
+        return self.__volume
