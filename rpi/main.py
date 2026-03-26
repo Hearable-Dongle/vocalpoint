@@ -84,7 +84,7 @@ def main() -> int:
 
     # Connect device if unconnected
     if not info["Connected"]:
-        assert bt.connect(cfg.sink, cfg.fs)
+        assert bt.connect(cfg.sink, cfg.fs, cfg.timeout_ms)
         cfg.logger.info(f"Connected device: {info['Name']}")
 
     # Start audio streaming in background thread

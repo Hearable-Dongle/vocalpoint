@@ -529,7 +529,7 @@ class BT_Interface:
             # Return the result of the untrust attempt
             return ret_code
     
-    def connect(self, mac: str, fs: int) -> bool:
+    def connect(self, mac: str, fs: int, timeout_ms: int) -> bool:
         """
         Connect to a Bluetooth device and establish audio routing.
         
@@ -539,6 +539,8 @@ class BT_Interface:
             Device MAC address to connect to
         fs : int
             Sample rate for audio streaming (e.g., 16000 Hz)
+        timeout_ms : int
+            Maximum time to wait for connection in milliseconds
             
         Returns
         -------
@@ -587,7 +589,7 @@ class BT_Interface:
                 device.Connect(timeout=30000)
                 
                 # Find the PulseAudio sink corresponding to this Bluetooth device
-                sink_name = self.__get_pulseaudio_sink(mac)
+                sink_name = self.__get_pulseaudio_sink(mac, timeout_ms)
 
                 # Check if a valid PulseAudio sink was found for the device
                 if not sink_name:
@@ -1244,7 +1246,7 @@ class BT_Interface:
             # Return the result of the sink query attempt
             return self.__sink_found
     
-    def __get_pulseaudio_sink(self, mac: str) -> str:
+    def __get_pulseaudio_sink(self, mac: str, timeout_ms: int) -> str:
         """
         Get the PulseAudio sink name for a Bluetooth device using async D-Bus signal listening.
         
@@ -1252,7 +1254,9 @@ class BT_Interface:
         ----------
         mac : str
             Bluetooth device MAC address
-            
+        timeout_ms : int
+            Maximum time to wait for sink creation in milliseconds
+
         Returns
         -------
         str
@@ -1265,7 +1269,7 @@ class BT_Interface:
         # Attempt to use async D-Bus listener for sink creation
         try:
             # Use async listener to wait for sink (max 15 seconds)
-            sink_name = self.__setup_sink_listener_and_wait(mac, timeout_ms=15000)
+            sink_name = self.__setup_sink_listener_and_wait(mac, timeout_ms=timeout_ms)
             
             # Check if sink was found
             if sink_name:

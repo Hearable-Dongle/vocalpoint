@@ -12,6 +12,7 @@ class Session_Config():
     __source: str = "respeaker"
     __frame: int = 160
     __fs: int = 16000
+    __timeout_ms: int = 15000
     __deps: list[str] = [
         "pactl",
         "pw-loopback",
@@ -93,3 +94,7 @@ class Session_Config():
         # Return logger instance
         return self.__logger
 
+    @property
+    def timeout_ms(self):
+        # Return private timeout value in milliseconds
+        return self.__timeout_ms
