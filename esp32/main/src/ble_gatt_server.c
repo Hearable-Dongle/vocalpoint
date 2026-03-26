@@ -20,12 +20,12 @@
 #include "esp_log.h"
 #include "host/ble_hs.h"
 #include "host/ble_uuid.h"
+#include "log.h"
 #include "state.h"
 #include "services/ans/ble_svc_ans.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
 
-static const char *s_tag = "ble_gatt_server";
 static uint16_t s_batt_chr_handle;
 static const size_t s_metadata_text_capacity = 448U;
 
@@ -203,25 +203,25 @@ void ble_gatt_server_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg)
 
     switch (ctxt->op) {
         case BLE_GATT_REGISTER_OP_SVC:
-            MODLOG_DFLT(DEBUG,
-                        "registered service %s with handle=%d\n",
-                        ble_uuid_to_str(ctxt->svc.svc_def->uuid, uuid_str),
-                        ctxt->svc.handle);
+            ESP_LOGI(s_tag,
+                     "registered service %s with handle=%d\n",
+                     ble_uuid_to_str(ctxt->svc.svc_def->uuid, uuid_str),
+                     ctxt->svc.handle);
             break;
 
         case BLE_GATT_REGISTER_OP_CHR:
-            MODLOG_DFLT(DEBUG,
-                        "registering characteristic %s with def_handle=%d val_handle=%d\n",
-                        ble_uuid_to_str(ctxt->chr.chr_def->uuid, uuid_str),
-                        ctxt->chr.def_handle,
-                        ctxt->chr.val_handle);
+            ESP_LOGI(s_tag,
+                     "registering characteristic %s with def_handle=%d val_handle=%d\n",
+                     ble_uuid_to_str(ctxt->chr.chr_def->uuid, uuid_str),
+                     ctxt->chr.def_handle,
+                     ctxt->chr.val_handle);
             break;
 
         case BLE_GATT_REGISTER_OP_DSC:
-            MODLOG_DFLT(DEBUG,
-                        "registering descriptor %s with handle=%d\n",
-                        ble_uuid_to_str(ctxt->dsc.dsc_def->uuid, uuid_str),
-                        ctxt->dsc.handle);
+            ESP_LOGI(s_tag,
+                     "registering descriptor %s with handle=%d\n",
+                     ble_uuid_to_str(ctxt->dsc.dsc_def->uuid, uuid_str),
+                     ctxt->dsc.handle);
             break;
 
         default:

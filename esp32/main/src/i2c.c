@@ -33,6 +33,7 @@
 #include "hal/i2c_ll.h"
 #include "i2c_protocol.h"
 #include "i2c_private.h"
+#include "log.h"
 #include "state.h"
 
 #define I2C_PORT                I2C_NUM_0
@@ -43,7 +44,6 @@
 #define I2C_TASK_PRIORITY       1
 #define I2C_TASK_PERIOD_MS      10
 
-static const char *TAG = "i2c";
 static i2c_slave_dev_handle_t s_i2c_slave;
 
 typedef struct {
@@ -281,13 +281,13 @@ static esp_err_t i2c_render_param_response(uint32_t req_flags, const vp_state_sn
     memset(resp, 0, sizeof(resp));
 
     if (param_bit == 0U || (param_bit & (param_bit - 1U)) != 0U) {
-        ESP_LOGW(TAG, "invalid param request 0x%08" PRIx32, req_flags);
+        ESP_LOGI(s_tag, "invalid param request 0x%08" PRIx32, req_flags);
         return i2c_mailbox_write_response(resp, 0U);
     }
 
     payload_total = vp_param_payload_info(param_bit, snap, &payload, &clear_mask);
     if (payload_total == 0U || payload == NULL) {
-        ESP_LOGW(TAG, "unsupported param request 0x%08" PRIx32, req_flags);
+        ESP_LOGI(s_tag, "unsupported param request 0x%08" PRIx32, req_flags);
         return i2c_mailbox_write_response(resp, 0U);
     }
     put_u32_le(resp, req_flags);
@@ -299,7 +299,7 @@ static esp_err_t i2c_render_param_response(uint32_t req_flags, const vp_state_sn
         }
         memcpy(&resp[VP_RESP_HDR_LEN], payload + req_offset, chunk_len);
     } else {
-        ESP_LOGW(TAG,
+        ESP_LOGI(s_tag,
                  "request offset out of range: req=0x%08" PRIx32 " total=%u",
                  req_flags,
                  (unsigned)payload_total);
@@ -351,7 +351,7 @@ static esp_err_t i2c_handle_voice_profile_write(void)
     voice_name[copy_len] = '\0';
 
     vp_state_register_voice_profile_name(voice_name);
-    ESP_LOGI(TAG, "voice profile write received: '%s'", voice_name);
+    ESP_LOGI(s_tag, "voice profile write received: '%s'", voice_name);
 
     err = i2c_render_status_response();
     if (err != ESP_OK) {
@@ -382,7 +382,7 @@ static esp_err_t i2c_handle_audio_out_name_write(void)
     memcpy(audio_out_name, payload, copy_len);
     audio_out_name[copy_len] = '\0';
     vp_state_announce_audio_out_name(audio_out_name);
-    ESP_LOGI(TAG, "audio output announcement received: '%s'", audio_out_name);
+    ESP_LOGI(s_tag, "audio output announcement received: '%s'", audio_out_name);
 
     err = i2c_render_status_response();
     if (err != ESP_OK) {
@@ -408,7 +408,7 @@ static void i2c_task(void *arg)
         esp_err_t err = i2c_mailbox_read_request(&req_flags);
         if (err != ESP_OK) {
             if (err != ESP_ERR_NOT_FOUND) {
-                ESP_LOGW(TAG, "request mailbox read failed: %s", esp_err_to_name(err));
+                ESP_LOGI(s_tag, "request mailbox read failed: %s", esp_err_to_name(err));
             }
             vTaskDelay(pdMS_TO_TICKS(I2C_TASK_PERIOD_MS));
             continue;
@@ -417,7 +417,7 @@ static void i2c_task(void *arg)
         if (i2c_req_is_voice_profile_write_request(req_flags)) {
             err = i2c_handle_voice_profile_write();
             if (err != ESP_OK) {
-                ESP_LOGW(TAG, "voice profile write failed: %s", esp_err_to_name(err));
+                ESP_LOGI(s_tag, "voice profile write failed: %s", esp_err_to_name(err));
             }
             vTaskDelay(pdMS_TO_TICKS(I2C_TASK_PERIOD_MS));
             continue;
@@ -426,7 +426,7 @@ static void i2c_task(void *arg)
         if (i2c_req_is_audio_out_name_write_request(req_flags)) {
             err = i2c_handle_audio_out_name_write();
             if (err != ESP_OK) {
-                ESP_LOGW(TAG, "audio output write failed: %s", esp_err_to_name(err));
+                ESP_LOGI(s_tag, "audio output write failed: %s", esp_err_to_name(err));
             }
             vTaskDelay(pdMS_TO_TICKS(I2C_TASK_PERIOD_MS));
             continue;
@@ -435,7 +435,7 @@ static void i2c_task(void *arg)
         if (i2c_req_is_reboot_ack_request(req_flags)) {
             err = i2c_handle_reboot_ack();
             if (err != ESP_OK) {
-                ESP_LOGW(TAG, "reboot ack failed: %s", esp_err_to_name(err));
+                ESP_LOGI(s_tag, "reboot ack failed: %s", esp_err_to_name(err));
             }
             vTaskDelay(pdMS_TO_TICKS(I2C_TASK_PERIOD_MS));
             continue;
@@ -452,7 +452,7 @@ static void i2c_task(void *arg)
             if (err == ESP_OK) {
                 last_key = next_key;
             } else if (err != ESP_ERR_INVALID_ARG) {
-                ESP_LOGW(TAG, "response render failed: %s", esp_err_to_name(err));
+                ESP_LOGI(s_tag, "response render failed: %s", esp_err_to_name(err));
             } else {
                 /* Ignore transient malformed writes so the previous valid
                  * response remains in the mailbox for the master's follow-up read. */
@@ -487,7 +487,7 @@ void i2c_init(void)
     memset(init_ram, 0, sizeof(init_ram));
     ESP_ERROR_CHECK(i2c_slave_write_ram(s_i2c_slave, 0U, init_ram, sizeof(init_ram)));
 
-    ESP_LOGI(TAG,
+    ESP_LOGI(s_tag,
              "I2C slave ready  port=%d addr=0x%02X sda=%d scl=%d mode=mailbox req_off=%u resp_off=%u",
              I2C_PORT,
              VP_I2C_SLAVE_ADDR,

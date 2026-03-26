@@ -17,9 +17,8 @@
 #include "state.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "log.h"
 #include "nvs_flash.h"
-
-static const char *s_tag = "app_main";
 
 void app_main(void)
 {
@@ -35,6 +34,6 @@ void app_main(void)
 
     err = ble_manager_init();
     if (err != ESP_OK) {
-        ESP_LOGE(s_tag, "BLE manager init failed: %d", err);
+        ESP_LOGI(s_tag, "BLE manager init failed: %d", err);
     }
 }
