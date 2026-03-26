@@ -43,7 +43,7 @@
  * Variable Declarations
  **************************************************************************************************/
 
-static uint8_t s_own_addr_type;
+static uint8_t own_addr_type;
 
 
 /***************************************************************************************************
@@ -81,12 +81,12 @@ static int ble_gap_event_handler(struct ble_gap_event *event, void *arg);
  * @return void
  */
 /**************************************************************************************************/
-static void ble_convert_addr(const uint8_t *p_addr, char *p_string, size_t p_string_len)
+static void ble_convert_addr(unsigned char *p_addr, char *p_string, size_t p_string_len)
 {
     // Validate input parameters.
     if (p_addr != NULL && p_string != NULL && p_string_len > 0)
     {
-        // Format the address as a standard MAC address string.
+        // Format address as a standard MAC address string.
         snprintf(
             p_string,
             p_string_len,
@@ -101,7 +101,7 @@ static void ble_convert_addr(const uint8_t *p_addr, char *p_string, size_t p_str
     }
     else
     {
-        // Log an error if the input parameters are invalid.
+        // Log an error if input parameters are invalid.
         ESP_LOGE(s_tag, "Invalid parameters for address conversion.");
     }
 }
@@ -121,7 +121,7 @@ static void ble_log_conn(struct ble_gap_conn_desc *p_desc)
     // Validate input parameters
     if (p_desc != NULL)
     {
-        // Declare a buffer to hold the formatted address strings.
+        // Declare a buffer to hold formatted address strings.
         char our_ota_addr[VP_BLE_ADDR_MAX_LEN];
         char our_id_addr[VP_BLE_ADDR_MAX_LEN];
         char peer_ota_addr[VP_BLE_ADDR_MAX_LEN];
@@ -171,7 +171,7 @@ static void ble_log_conn(struct ble_gap_conn_desc *p_desc)
     }
     else
     {
-        // Log an error if the input parameters are invalid.
+        // Log an error if input parameters are invalid.
         ESP_LOGE(s_tag, "Invalid parameters for connection logging.");
     }
 }
@@ -201,21 +201,21 @@ static void ble_start_advertising(void)
     memset(&fields, 0, sizeof(fields));
     memset(&params, 0, sizeof(params));
 
-    // Set the device name in the advertising data.
+    // Set device name in advertising data.
     const char *name = (const char *)ble_svc_gap_device_name();
     fields.name = (uint8_t *)name;
     fields.name_len = strlen(name);
     fields.name_is_complete = 1;
 
-    // Set the service UUIDs in the advertising data.
+    // Set service UUIDs in advertising data.
     fields.uuids16 = (ble_uuid16_t[]){BLE_UUID16_INIT(BLE_ADV_SERVICE_UUID)};
     fields.num_uuids16 = 1;
     fields.uuids16_is_complete = 1;
 
-    // Set the advertising flags.
+    // Set advertising flags.
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
 
-    // Set the advertising TX power level.
+    // Set advertising TX power level.
     fields.tx_pwr_lvl_is_present = 1;
     fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
 
@@ -223,7 +223,7 @@ static void ble_start_advertising(void)
     params.conn_mode = BLE_GAP_CONN_MODE_UND;
     params.disc_mode = BLE_GAP_DISC_MODE_GEN;
 
-    // Set the advertising data and handle any errors.
+    // Set advertising data and handle any errors.
     ret_code = ble_gap_adv_set_fields(&fields);
     if (ret_code != 0)
     {
@@ -237,7 +237,7 @@ static void ble_start_advertising(void)
 
     // Start advertising and handle any errors.
     ret_code = ble_gap_adv_start(
-        s_own_addr_type,
+        own_addr_type,
         NULL,
         BLE_HS_FOREVER,
         &params,
@@ -246,9 +246,10 @@ static void ble_start_advertising(void)
     );
     if (ret_code != 0)
     {
+        // Log an error if advertisement startup fails.
         ESP_LOGE(
             s_tag,
-            "Unsuccessful enabling advertisement.\n"
+            "Unsuccessful starting advertisement.\n"
             "\tret_code=%d\n",
             ret_code
         );
@@ -269,179 +270,501 @@ static void ble_start_advertising(void)
 /**************************************************************************************************/
 static int ble_gap_event_handler(struct ble_gap_event *event, void *arg)
 {
-    (void)arg;
+    // Define return code variable for error handling.
+    int ret_code = 0;
 
+    // Declare a connection descriptor for use in events that require connection information.
     struct ble_gap_conn_desc desc;
-    int rc;
 
-    switch (event->type) {
+    // Handle GAP event based on type.
+    switch (event->type)
+    {
+        // Handle connection events.
         case BLE_GAP_EVENT_CONNECT:
-            ESP_LOGI(s_tag,
-                     "connection %s; status=%d ",
-                     event->connect.status == 0 ? "established" : "failed",
-                     event->connect.status);
 
-            if (event->connect.status == 0) {
-                rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
-                assert(rc == 0);
-                ble_log_conn(&desc);
+            // Log event and connection status.
+            ESP_LOGI(
+                s_tag,
+                "Connection event triggered.\n"
+                "\tstatus=%s\n",
+                event->connect.status == 0 ? "established" : "failed"
+            );
 
-                char peer_addr[VP_BLE_ADDR_MAX_LEN];
-                ble_convert_addr(desc.peer_id_addr.val,
-                                 peer_addr,
-                                 sizeof(peer_addr));
-                vp_state_set_ble_uuid_addr(peer_addr);
+            // Verify connection was successful.
+            if (event->connect.status == 0)
+            {
+                // Retrieve connection details and handle any errors.
+                ret_code = ble_gap_conn_find(event->connect.conn_handle, &desc);
+                if (ret_code == 0)
+                {
+                    // Log connection details
+                    ble_log_conn(&desc);
+
+                    // Update BLE address in shared state for display and diagnostics.
+                    char peer_addr[VP_BLE_ADDR_MAX_LEN];
+                    ble_convert_addr(desc.peer_id_addr.val, peer_addr, sizeof(peer_addr));
+                    vp_state_set_ble_uuid_addr(peer_addr);
+                }
+                else
+                {
+                    // Log an error if connection descriptor is not found.
+                    ESP_LOGE(
+                        s_tag,
+                        "Failed to find connection descriptor for new connection.\n"
+                        "\tconn_handle=%d\n"
+                        "\tret_code=%d\n",
+                        event->connect.conn_handle,
+                        ret_code
+                    );
+                }
             }
-
-            ESP_LOGI(s_tag, "\n");
-
-            if (event->connect.status != 0) {
+            else
+            {
+                // Start advertising again if connection attempt failed.
                 ble_start_advertising();
             }
-            return 0;
 
+            // Break from switch statement after handling event.
+            break;
+
+        // Handle disconnection events.
         case BLE_GAP_EVENT_DISCONNECT:
-            ESP_LOGI(s_tag, "disconnect; reason=%d ", event->disconnect.reason);
+
+            // Log event and disconnection reason.
+            ESP_LOGI(
+                s_tag,
+                "Disconnect event triggered.\n"
+                "\treason=%d\n",
+                event->disconnect.reason
+            );
+
+            // Log connection details for disconnected connection.
             ble_log_conn(&event->disconnect.conn);
-            ESP_LOGI(s_tag, "\n");
-            ble_start_advertising();
-            return 0;
 
+            // Start advertising again to allow new connections after disconnection.
+            ble_start_advertising();
+            
+            // Break from switch statement after handling event.
+            break;
+
+        // Handle connection update events.
         case BLE_GAP_EVENT_CONN_UPDATE:
-            ESP_LOGI(s_tag, "connection updated; status=%d ", event->conn_update.status);
-            rc = ble_gap_conn_find(event->conn_update.conn_handle, &desc);
-            assert(rc == 0);
-            ble_log_conn(&desc);
-            ESP_LOGI(s_tag, "\n");
-            return 0;
 
+            // Log event and connection update status.
+            ESP_LOGI(
+                s_tag,
+                "Connection update event triggered.\n"
+                "\tstatus=%d\n",
+                event->conn_update.status
+            );
+
+            // Retrieve connection details and handle any errors.
+            ret_code = ble_gap_conn_find(event->conn_update.conn_handle, &desc);
+            if (ret_code == 0)
+            {
+                // Log connection details
+                ble_log_conn(&desc);
+            }
+            else
+            {
+                // Log an error if connection descriptor is not found.
+                ESP_LOGE(
+                    s_tag,
+                    "Failed to find connection descriptor for current connection.\n"
+                    "\tconn_handle=%d\n"
+                    "\tret_code=%d\n",
+                    event->conn_update.conn_handle,
+                    ret_code
+                );
+            }
+            
+            // Break from switch statement after handling event.
+            break;
+
+        // Handle advertising completion events.
         case BLE_GAP_EVENT_ADV_COMPLETE:
-            ESP_LOGI(s_tag, "advertise complete; reason=%d", event->adv_complete.reason);
+
+            // Log event and advertising reason.
+            ESP_LOGI(
+                s_tag,
+                "Advertising complete event triggered.\n"
+                "\treason=%d\n",
+                event->adv_complete.reason
+            );
+
+            // Start advertising again to maintain continuous advertising.
             ble_start_advertising();
-            return 0;
+            
+            // Break from switch statement after handling event.
+            break;
 
+        // Handle encryption change events.
         case BLE_GAP_EVENT_ENC_CHANGE:
-            ESP_LOGI(s_tag, "encryption change event; status=%d ", event->enc_change.status);
-            rc = ble_gap_conn_find(event->enc_change.conn_handle, &desc);
-            assert(rc == 0);
-            ble_log_conn(&desc);
-            ESP_LOGI(s_tag, "\n");
-            return 0;
 
+            // Log event and encryption change status.
+            ESP_LOGI(
+                s_tag,
+                "Encryption change event triggered.\n"
+                "\tstatus=%d\n",
+                event->enc_change.status
+            );
+
+            // Retrieve connection details and handle any errors.
+            ret_code = ble_gap_conn_find(event->enc_change.conn_handle, &desc);
+            if (ret_code == 0)
+            {
+                // Log connection details
+                ble_log_conn(&desc);
+            }
+            else
+            {
+                // Log an error if connection descriptor is not found.
+                ESP_LOGE(
+                    s_tag,
+                    "Failed to find connection descriptor for current connection.\n"
+                    "\tconn_handle=%d\n"
+                    "\tret_code=%d\n",
+                    event->enc_change.conn_handle,
+                    ret_code
+                );
+            }
+            
+            // Break from switch statement after handling event.
+            break;
+
+        // Handle notification transmission events.
         case BLE_GAP_EVENT_NOTIFY_TX:
-            ESP_LOGI(s_tag,
-                     "notify_tx event; conn_handle=%d attr_handle=%d status=%d is_indication=%d",
-                     event->notify_tx.conn_handle,
-                     event->notify_tx.attr_handle,
-                     event->notify_tx.status,
-                     event->notify_tx.indication);
-            return 0;
 
+            // Log event and notification transmission details.
+            ESP_LOGI(
+                s_tag,
+                "Notification transmission event triggered.\n"
+                "\tstatus=%d\n"
+                "\tattr_handle=%d\n"
+                "\tis_indication=%d\n",
+                event->notify_tx.status,
+                event->notify_tx.attr_handle,
+                event->notify_tx.indication
+            );
+
+            // Retrieve connection details and handle any errors.
+            ret_code = ble_gap_conn_find(event->notify_tx.conn_handle, &desc);
+            if (ret_code == 0)
+            {
+                // Log connection details
+                ble_log_conn(&desc);
+            }
+            else
+            {
+                // Log an error if connection descriptor is not found.
+                ESP_LOGE(
+                    s_tag,
+                    "Failed to find connection descriptor for current connection.\n"
+                    "\tconn_handle=%d\n"
+                    "\tret_code=%d\n",
+                    event->notify_tx.conn_handle,
+                    ret_code
+                );
+            }
+            
+            // Break from switch statement after handling event.
+            break;
+
+        // Handle subscription events.
         case BLE_GAP_EVENT_SUBSCRIBE:
-            ESP_LOGI(s_tag,
-                     "subscribe event; conn_handle=%d attr_handle=%d reason=%d prevn=%d curn=%d previ=%d curi=%d\n",
-                     event->subscribe.conn_handle,
-                     event->subscribe.attr_handle,
-                     event->subscribe.reason,
-                     event->subscribe.prev_notify,
-                     event->subscribe.cur_notify,
-                     event->subscribe.prev_indicate,
-                     event->subscribe.cur_indicate);
-            return 0;
 
+            // Log event and subscription details.
+            ESP_LOGI(s_tag,
+                "Subscription event triggered.\n"
+                "\tattr_handle=%d\n"
+                "\treason=%d\n"
+                "\tprev_notify=%d\n"
+                "\tcur_notify=%d\n"
+                "\tprev_indicate=%d\n"
+                "\tcur_indicate=%d\n",
+                event->subscribe.attr_handle,
+                event->subscribe.reason,
+                event->subscribe.prev_notify,
+                event->subscribe.cur_notify,
+                event->subscribe.prev_indicate,
+                event->subscribe.cur_indicate
+            );
+
+            // Retrieve connection details and handle any errors.
+            ret_code = ble_gap_conn_find(event->subscribe.conn_handle, &desc);
+            if (ret_code == 0)
+            {
+                // Log connection details
+                ble_log_conn(&desc);
+            }
+            else
+            {
+                // Log an error if connection descriptor is not found.
+                ESP_LOGE(
+                    s_tag,
+                    "Failed to find connection descriptor for current connection.\n"
+                    "\tconn_handle=%d\n"
+                    "\tret_code=%d\n",
+                    event->subscribe.conn_handle,
+                    ret_code
+                );
+            }
+            
+            // Break from switch statement after handling event.
+            break;
+
+        // Handle packet size update events.
         case BLE_GAP_EVENT_MTU:
-            ESP_LOGI(s_tag,
-                     "mtu update event; conn_handle=%d cid=%d mtu=%d\n",
-                     event->mtu.conn_handle,
-                     event->mtu.channel_id,
-                     event->mtu.value);
-            return 0;
 
+            // Log event and MTU details.
+            ESP_LOGI(
+                s_tag,
+                "MTU update event triggered.\n"
+                "\tconn_handle=%d\n"
+                "\tcid=%d\n"
+                "\tmtu=%d\n",
+                event->mtu.conn_handle,
+                event->mtu.channel_id,
+                event->mtu.value
+            );
+
+            // Retrieve connection details and handle any errors.
+            ret_code = ble_gap_conn_find(event->mtu.conn_handle, &desc);
+            if (ret_code == 0)
+            {
+                // Log connection details
+                ble_log_conn(&desc);
+            }
+            else
+            {
+                // Log an error if connection descriptor is not found.
+                ESP_LOGE(
+                    s_tag,
+                    "Failed to find connection descriptor for current connection.\n"
+                    "\tconn_handle=%d\n"
+                    "\tret_code=%d\n",
+                    event->mtu.conn_handle,
+                    ret_code
+                );
+            }
+            
+            // Break from switch statement after handling event.
+            break;
+
+        // Handle repeat pairing events by deleting existing bond and retrying pairing.
         case BLE_GAP_EVENT_REPEAT_PAIRING:
-            rc = ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc);
-            assert(rc == 0);
-            ble_store_util_delete_peer(&desc.peer_id_addr);
-            return BLE_GAP_REPEAT_PAIRING_RETRY;
+
+            // Log event and repeat pairing details.
+            ESP_LOGI(
+                s_tag,
+                "Repeat pairing event triggered.\n"
+            );
+
+            // Retrieve connection details and handle any errors.
+            ret_code = ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc);
+            if (ret_code == 0)
+            {
+                // Log connection details
+                ble_log_conn(&desc);
+
+                // Delete existing bond for peer to allow pairing to proceed.
+                ble_store_util_delete_peer(&desc.peer_id_addr);
+
+                // Set return code to retry pairing after deleting existing bond.
+                ret_code = BLE_GAP_REPEAT_PAIRING_RETRY;
+            }
+            else
+            {
+                // Log an error if connection descriptor is not found.
+                ESP_LOGE(
+                    s_tag,
+                    "Failed to find connection descriptor for current connection.\n"
+                    "\tconn_handle=%d\n"
+                    "\tret_code=%d\n",
+                    event->repeat_pairing.conn_handle,
+                    ret_code
+                );
+            }
+
+            // Break from switch statement after handling event.
+            break;
     }
 
-    return 0;
+    // Return zero to indicate successful event handling, or event-specific return codes.
+    return ret_code;
 }
 
 static void ble_on_reset(int reason)
 {
-    ESP_LOGI(s_tag, "Resetting state; reason=%d\n", reason);
+    // Log reset and the reason for the BLE host reset.
+    ESP_LOGI(
+        s_tag,
+        "State reset requested.\n"
+        "\treason=%d\n",
+        reason
+    );
 }
 
 static void ble_on_sync(void)
 {
-    int rc;
+    // Define return code variable for error handling.
+    int ret_code = 0;
 
-    rc = ble_hs_util_ensure_addr(0);
-    assert(rc == 0);
+    // Ensure BLE host has a valid address before starting advertising and handle any errors.
+    ret_code = ble_hs_util_ensure_addr(0);
+    if (ret_code == 0)
+    {
+        // Automatically determine BLE host address type and handle any errors.
+        ret_code = ble_hs_id_infer_auto(0, &own_addr_type);
+        if (ret_code == 0)
+        {
+            // Define a buffer to hold BLE address value.
+            uint8_t addr_val[6] = {0};
 
-    rc = ble_hs_id_infer_auto(0, &s_own_addr_type);
-    if (rc != 0) {
-        ESP_LOGI(s_tag, "error determining address type; rc=%d\n", rc);
-        return;
+            // Copy BLE host address value into buffer and handle any errors.
+            ret_code = ble_hs_id_copy_addr(own_addr_type, addr_val, NULL);
+            if (ret_code == 0)
+            {
+                // Update BLE address in shared state for display and diagnostics.
+                char own_addr[VP_BLE_ADDR_MAX_LEN];
+                ble_convert_addr(addr_val, own_addr, sizeof(own_addr));
+                vp_state_set_ble_uuid_addr(own_addr);
+
+                // Log the BLE host address.
+                ESP_LOGI(
+                    s_tag,
+                    "Updated BLE host address.\n"
+                    "\town_addr_type=%d\n"
+                    "\town_addr=%s\n",
+                    own_addr_type,
+                    own_addr
+                );
+            }
+            else
+            {
+                // Log an error if the BLE host address cannot be copied.
+                ESP_LOGE(
+                    s_tag,
+                    "Failed to copy BLE host address.\n"
+                    "\tret_code=%d\n",
+                    ret_code
+                );
+            }
+        }
+        else
+        {
+            // Log an error if the BLE host address type cannot be inferred.
+            ESP_LOGE(
+                s_tag,
+                "Failed to determine BLE host address type.\n"
+                "\tret_code=%d\n",
+                ret_code
+            );
+        }
+    }
+    else
+    {
+        // Log an error if the BLE host address cannot be ensured.
+        ESP_LOGE(
+            s_tag,
+            "Failed to ensure BLE host address.\n"
+            "\tret_code=%d\n",
+            ret_code
+        );
     }
 
-    uint8_t addr_val[6] = {0};
-    rc = ble_hs_id_copy_addr(s_own_addr_type, addr_val, NULL);
-    if (rc == 0) {
-        char own_addr[VP_BLE_ADDR_MAX_LEN];
-        ble_convert_addr(addr_val, own_addr, sizeof(own_addr));
-        vp_state_set_ble_uuid_addr(own_addr);
-
-        ESP_LOGI(s_tag, "Device Address: ");
-        print_addr(addr_val);
-        ESP_LOGI(s_tag, "\n");
-    }
-
+    // Start advertising to allow connections.
     ble_start_advertising();
 }
 
 static void ble_host_task(void *param)
 {
-    (void)param;
+    // Log the start of the BLE host task.
+    ESP_LOGI(
+        s_tag,
+        "BLE host task started\n"
+    );
 
-    ESP_LOGI(s_tag, "BLE Host Task Started\n");
+    // Run the BLE host task to process events and manage BLE operations, while blocking until end.
     nimble_port_run();
+
+    // Deinitialize the BLE host task and log its completion.
     nimble_port_freertos_deinit();
 }
 
 esp_err_t ble_manager_init(void)
 {
-    int rc;
-    esp_err_t err;
+    // Define return code and error code variables for error handling.
+    int ret_code = 0;
+    esp_err_t err_code = ESP_OK;
 
-    err = nimble_port_init();
-    if (err != ESP_OK) {
-        ESP_LOGI(s_tag, "Failed to init nimble: %d\n", err);
-        return err;
+    // Initialize the NimBLE host stack and handle any errors.
+    err_code = nimble_port_init();
+    if (err_code == ESP_OK)
+    {
+        // Set BLE host configuration callbacks.
+        ble_hs_cfg.reset_cb = ble_on_reset;
+        ble_hs_cfg.sync_cb = ble_on_sync;
+        ble_hs_cfg.gatts_register_cb = ble_gatt_server_register_cb;
+        ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
+
+        // Configure BLE security parameters for pairing and bonding.
+        ble_hs_cfg.sm_io_cap = CONFIG_EXAMPLE_IO_TYPE;
+        ble_hs_cfg.sm_sc = 0;
+
+        // Initialize GATT server and handle any errors.
+        ret_code = ble_gatt_server_init();
+        if (ret_code == 0)
+        {
+            // Set the device name for the GATT server and handle any errors.
+            ret_code = ble_svc_gap_device_name_set("VocalPoint");
+            if (ret_code == 0)
+            {
+                // Initialize BLE storage configuration.
+                ble_store_config_init();
+
+                // Start the BLE host task to process BLE events and manage BLE operations.
+                nimble_port_freertos_init(ble_host_task);
+            }
+            else
+            {
+                // Log an error if the device name for the GATT server cannot be set.
+                ESP_LOGI(
+                    s_tag,
+                    "Failed to set device name for GATT server.\n"
+                    "\tret_code=%d\n",
+                    ret_code
+                );
+
+                // Set error code to indicate failure of BLE manager initialization.
+                err_code = ESP_FAIL;
+            }
+        }
+        else
+        {
+            // Log an error if the GATT server fails to initialize.
+            ESP_LOGI(
+                s_tag,
+                "Failed to initialize GATT server\n"
+                "\tret_code=%d\n",
+                ret_code
+            );
+
+            // Set error code to indicate failure of BLE manager initialization.
+            err_code = ESP_FAIL;
+        }
+    }
+    else
+    {
+        // Log an error if the BLE host stack fails to initialize.
+        ESP_LOGI(
+            s_tag,
+            "Failed to initialize NimBLE.\n"
+            "\terr_code=%d\n",
+            err_code
+        );
     }
 
-    ble_hs_cfg.reset_cb = ble_on_reset;
-    ble_hs_cfg.sync_cb = ble_on_sync;
-    ble_hs_cfg.gatts_register_cb = ble_gatt_server_register_cb;
-    ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
-
-    ble_hs_cfg.sm_io_cap = CONFIG_EXAMPLE_IO_TYPE;
-    ble_hs_cfg.sm_sc = 0;
-
-    rc = ble_gatt_server_init();
-    if (rc != 0) {
-        ESP_LOGI(s_tag, "ble_gatt_server_init failed: %d\n", rc);
-        return ESP_FAIL;
-    }
-
-    rc = ble_svc_gap_device_name_set("VocalPoint");
-    if (rc != 0) {
-        ESP_LOGI(s_tag, "ble_svc_gap_device_name_set failed: %d\n", rc);
-        return ESP_FAIL;
-    }
-
-    ble_store_config_init();
-    nimble_port_freertos_init(ble_host_task);
-
-    return ESP_OK;
+    // Return the error code to indicate success or failure of BLE manager initialization.
+    return err_code;
 }
