@@ -1,8 +1,7 @@
 /**************************************************************************************************/
 /**
  * @file ble_gatt_server.h
- * @author
- * @brief
+ * @brief BLE GATT server implementation for custom control and metadata characteristics.
  *
  * @version 0.1
  * @date 2026-03-03
@@ -15,51 +14,23 @@
 #ifndef BLE_GATT_SERVER_H_
 #define BLE_GATT_SERVER_H_
 
-#include <stdint.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-struct ble_gatt_register_ctxt;
+/***************************************************************************************************
+ * Function Declarations
+ **************************************************************************************************/
 
 /**************************************************************************************************/
 /**
  * @name ble_gatt_server_init
- * @brief Initializes GAP/GATT services and registers the custom service table.
+ * @brief Initializes standard BLE services and registers custom service definitions.
  *
- *
- *
- * @return int 0 on success, non-zero on error.
+ * @return int 0 on success, non-zero NimBLE error code on failure.
  */
 /**************************************************************************************************/
 int ble_gatt_server_init(void);
-
-/**************************************************************************************************/
-/**
- * @name ble_gatt_server_notify_voice_profile_number
- * @brief Sends the current voice profile number to the active peer when subscribed.
- *
- * @param conn_handle Active BLE connection handle.
- *
- *
- * @return int Not used.
- */
-/**************************************************************************************************/
-void ble_gatt_server_notify_voice_profile_number(uint16_t conn_handle);
-
-/**************************************************************************************************/
-/**
- * @name ble_gatt_server_set_voice_profile_number
- * @brief Updates the numerical representation of a voice profile.
- *
- * @param voice_profile_number Voice profile number.
- *
- *
- * @return int Not used.
- */
-/**************************************************************************************************/
-void ble_gatt_server_set_voice_profile_number(uint8_t voice_profile_number);
 
 #ifdef __cplusplus
 }

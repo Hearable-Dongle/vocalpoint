@@ -594,6 +594,16 @@ static int ble_gap_event_handler(struct ble_gap_event *event, void *arg)
     return ret_code;
 }
 
+/**************************************************************************************************/
+/**
+ * @name ble_on_reset
+ * @brief Handles NimBLE host reset events and logs the reset reason.
+ *
+ * @param reason Reset reason code provided by NimBLE.
+ *
+ * @return void
+ */
+/**************************************************************************************************/
 static void ble_on_reset(int reason)
 {
     // Log reset and the reason for the BLE host reset.
@@ -605,6 +615,14 @@ static void ble_on_reset(int reason)
     );
 }
 
+/**************************************************************************************************/
+/**
+ * @name ble_on_sync
+ * @brief Handles NimBLE sync completion, resolves local address, and starts advertising.
+ *
+ * @return void
+ */
+/**************************************************************************************************/
 static void ble_on_sync(void)
 {
     // Define return code variable for error handling.
@@ -677,6 +695,17 @@ static void ble_on_sync(void)
     ble_start_advertising();
 }
 
+/**************************************************************************************************/
+/**
+ * @name ble_on_gatts_register
+ * @brief Logs GATT service, characteristic, and descriptor registration events.
+ *
+ * @param ctxt Registration context describing the registered GATT object.
+ * @param arg User callback argument (unused).
+ *
+ * @return void
+ */
+/**************************************************************************************************/
 static void ble_on_gatts_register(struct ble_gatt_register_ctxt *ctxt, void *arg)
 {
     // Define a buffer to hold formatted UUID strings.
@@ -751,6 +780,16 @@ static void ble_on_gatts_register(struct ble_gatt_register_ctxt *ctxt, void *arg
     }
 }
 
+/**************************************************************************************************/
+/**
+ * @name ble_host_task
+ * @brief Runs the NimBLE host task loop and deinitializes on exit.
+ *
+ * @param param FreeRTOS task parameter (unused).
+ *
+ * @return void
+ */
+/**************************************************************************************************/
 static void ble_host_task(void *param)
 {
     // Log the start of the BLE host task.
@@ -766,6 +805,14 @@ static void ble_host_task(void *param)
     nimble_port_freertos_deinit();
 }
 
+/**************************************************************************************************/
+/**
+ * @name ble_manager_init
+ * @brief Initializes NimBLE host, GATT server, callbacks, and BLE runtime task.
+ *
+ * @return esp_err_t ESP_OK on success, otherwise ESP_FAIL or initialization error.
+ */
+/**************************************************************************************************/
 esp_err_t ble_manager_init(void)
 {
     // Define return code and error code variables for error handling.
