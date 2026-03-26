@@ -677,6 +677,80 @@ static void ble_on_sync(void)
     ble_start_advertising();
 }
 
+static void ble_on_gatts_register(struct ble_gatt_register_ctxt *ctxt, void *arg)
+{
+    // Define a buffer to hold formatted UUID strings.
+    char uuid_str[BLE_UUID_STR_LEN];
+
+    // Handle GATT registration operations based on the type of registration.
+    switch (ctxt->op) {
+
+        // Handle service registration operations.
+        case BLE_GATT_REGISTER_OP_SVC:
+
+            // Log service registration details.
+            ESP_LOGI(
+                s_tag,
+                "Registered service operation.\n"
+                "\tuuid=%s\n"
+                "\thandle=%d\n",
+                ble_uuid_to_str(ctxt->svc.svc_def->uuid, uuid_str),
+                ctxt->svc.handle
+            );
+            
+            // Break from switch statement after handling operation.
+            break;
+
+        // Handle characteristic registration operations.
+        case BLE_GATT_REGISTER_OP_CHR:
+
+            // Log characteristic registration details.
+            ESP_LOGI(
+                s_tag,
+                "Registered characteristic operation.\n"
+                "\tuuid=%s\n"
+                "\tdef_handle=%d\n"
+                "\tval_handle=%d\n",
+                ble_uuid_to_str(ctxt->chr.chr_def->uuid, uuid_str),
+                ctxt->chr.def_handle,
+                ctxt->chr.val_handle
+            );
+
+            // Break from switch statement after handling operation.
+            break;
+
+        // Handle descriptor registration operations.
+        case BLE_GATT_REGISTER_OP_DSC:
+
+            // Log descriptor registration details.
+            ESP_LOGI(
+                s_tag,
+                "Registered descriptor operation.\n"
+                "\tuuid=%s\n"
+                "\thandle=%d\n",
+                ble_uuid_to_str(ctxt->dsc.dsc_def->uuid, uuid_str),
+                ctxt->dsc.handle
+            );
+
+            // Break from switch statement after handling operation.
+            break;
+
+        // Handle unexpected registration operations.
+        default:
+
+            // Log an error if an unexpected GATT registration operation is requested.
+            ESP_LOGE(
+                s_tag,
+                "Unexpected registration operation requested\n"
+                "\top=%d\n",
+                ctxt->op
+            );
+
+            // Break from switch statement after handling operation.
+            break;
+    }
+}
+
 static void ble_host_task(void *param)
 {
     // Log the start of the BLE host task.
@@ -705,7 +779,7 @@ esp_err_t ble_manager_init(void)
         // Set BLE host configuration callbacks.
         ble_hs_cfg.reset_cb = ble_on_reset;
         ble_hs_cfg.sync_cb = ble_on_sync;
-        ble_hs_cfg.gatts_register_cb = ble_gatt_server_register_cb;
+        ble_hs_cfg.gatts_register_cb = ble_on_gatts_register;
         ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
 
         // Configure BLE security parameters for pairing and bonding.

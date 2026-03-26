@@ -25,19 +25,6 @@ struct ble_gatt_register_ctxt;
 
 /**************************************************************************************************/
 /**
- * @name ble_gatt_server_register_cb
- * @brief Handles NimBLE GATT registration events for logging and diagnostics.
- *
- * @param ctxt Registration context from NimBLE.
- * @param arg Optional user argument.
- *
- * @return int Not used.
- */
-/**************************************************************************************************/
-void ble_gatt_server_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg);
-
-/**************************************************************************************************/
-/**
  * @name ble_gatt_server_init
  * @brief Initializes GAP/GATT services and registers the custom service table.
  *

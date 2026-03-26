@@ -195,41 +195,6 @@ void ble_gatt_server_set_voice_profile_number(uint8_t voice_profile_number)
     vp_state_set_voice_profile_number(voice_profile_number);
 }
 
-void ble_gatt_server_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg)
-{
-    (void)arg;
-
-    char uuid_str[BLE_UUID_STR_LEN];
-
-    switch (ctxt->op) {
-        case BLE_GATT_REGISTER_OP_SVC:
-            ESP_LOGI(s_tag,
-                     "registered service %s with handle=%d\n",
-                     ble_uuid_to_str(ctxt->svc.svc_def->uuid, uuid_str),
-                     ctxt->svc.handle);
-            break;
-
-        case BLE_GATT_REGISTER_OP_CHR:
-            ESP_LOGI(s_tag,
-                     "registering characteristic %s with def_handle=%d val_handle=%d\n",
-                     ble_uuid_to_str(ctxt->chr.chr_def->uuid, uuid_str),
-                     ctxt->chr.def_handle,
-                     ctxt->chr.val_handle);
-            break;
-
-        case BLE_GATT_REGISTER_OP_DSC:
-            ESP_LOGI(s_tag,
-                     "registering descriptor %s with handle=%d\n",
-                     ble_uuid_to_str(ctxt->dsc.dsc_def->uuid, uuid_str),
-                     ctxt->dsc.handle);
-            break;
-
-        default:
-            assert(0);
-            break;
-    }
-}
-
 int ble_gatt_server_init(void)
 {
     int rc;
