@@ -234,18 +234,6 @@ uint32_t vp_state_get_dirty_flags(void);
 /**************************************************************************************************/
 void vp_state_clear_dirty_bits(uint32_t mask);
 
-/**************************************************************************************************/
-/**
- * @name vp_state_testing_tick
- * @brief Advances the dummy shared state once when I2C testing mode is enabled.
- *
- *
- *
- * @return int Not used.
- */
-/**************************************************************************************************/
-void vp_state_testing_tick(void);
-
 #ifdef __cplusplus
 }
 #endif

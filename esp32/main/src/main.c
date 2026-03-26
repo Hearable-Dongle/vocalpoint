@@ -15,25 +15,11 @@
 #include "ble_manager.h"
 #include "i2c.h"
 #include "state.h"
-#include "configs.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "nvs_flash.h"
 
 static const char *s_tag = "app_main";
-
-#if I2C_TESTING_MODE
-static void shared_state_testing_task(void *arg)
-{
-    (void)arg;
-
-    while (1) {
-        vp_state_testing_tick();
-        vTaskDelay(pdMS_TO_TICKS(500));
-    }
-}
-#endif
 
 void app_main(void)
 {
@@ -46,10 +32,6 @@ void app_main(void)
 
     vp_state_init();
     i2c_init();
-
-#if I2C_TESTING_MODE
-    xTaskCreate(shared_state_testing_task, "state_test", 3072, NULL, 1, NULL);
-#endif
 
     err = ble_manager_init();
     if (err != ESP_OK) {
