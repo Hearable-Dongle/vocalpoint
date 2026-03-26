@@ -1,7 +1,6 @@
 /**************************************************************************************************/
 /**
  * @file log.h
- * @author
  * @brief Shared logging helpers for source files.
  *
  * @version 0.1

@@ -1,7 +1,6 @@
 /**************************************************************************************************/
 /**
  * @file main.h
- * @author
  * @brief Application entrypoint declarations.
  *
  * @version 0.1
