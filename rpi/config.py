@@ -8,7 +8,8 @@ from pathlib import Path
 class Session_Config():
 
     # Private configuration variables
-    __sink: str = "9C:FC:28:30:11:9F"
+    # __sink: str = "9C:FC:28:30:11:9F"
+    __sink: str = "BC:87:FA:57:47:0E" # Bose QC Headphones
     __source: str = "respeaker"
     __frame: int = 160
     __fs: int = 16000

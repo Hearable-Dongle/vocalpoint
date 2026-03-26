@@ -1,0 +1,3 @@
+[submodule "signal-processing-research"]
+	path = signal-processing-research
+	url = git@github.com:Hearable-Dongle/signal-processing-research.git
