@@ -8,7 +8,7 @@ set(srcs
 idf_build_get_property(idf_path IDF_PATH)
 
 idf_component_register(SRCS "${srcs}"
-                       INCLUDE_DIRS "include"
+                       INCLUDE_DIRS "inc"
                        PRIV_INCLUDE_DIRS "${idf_path}/components/esp_driver_i2c"
                        REQUIRES bt
                                 esp_driver_gpio
