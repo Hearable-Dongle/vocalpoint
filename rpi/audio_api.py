@@ -84,9 +84,25 @@ def _float32_mono_to_pcm16_bytes(audio_mono: np.ndarray, expected_samples: int) 
     clipped = np.clip(mono * 32767.0, -32768.0, 32767.0)
     return clipped.astype(np.int16).tobytes()
 
+def _rms_normalize_to_input(
+    output_mono: np.ndarray,
+    input_channels: list[np.ndarray],
+    eps: float = 1e-6,
+) -> np.ndarray:
+    """Scale output so its RMS matches the mean RMS of the input channels."""
+    input_rms = float(np.mean([
+        np.sqrt(np.mean(ch.astype(np.float32) ** 2))
+        for ch in input_channels
+    ]))
+    output_f32 = np.asarray(output_mono, dtype=np.float32)
+    output_rms = float(np.sqrt(np.mean(output_f32 ** 2)))
+    gain = input_rms / (output_rms + eps)
+    return output_f32 * gain
 
-def process_audio_callback(audio_bytes: bytes, channels: int) -> bytes:
+def process_audio_callback(audio_bytes: bytes, channels: int, normalize_rms: bool = False) -> bytes:
     interleaved = _decode_interleaved_channels(audio_bytes, channels)
     selected_channels = _select_adapter_channels(interleaved)
     mono_float32 = _get_adapter().process_chunk(selected_channels)
+    if normalize_rms:
+        mono_float32 = _rms_normalize_to_input(mono_float32, selected_channels)
     return _float32_mono_to_pcm16_bytes(mono_float32, expected_samples=interleaved.shape[0])
