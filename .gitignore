@@ -4,4 +4,6 @@
 __pycache__/
 session.log
 *.pyc
-
+build/
+dependencies.lock
+.DS_Store
