@@ -1,8 +1,8 @@
 /**************************************************************************************************/
 /**
  * @file ble_manager.c
- * @author
- * @brief
+ * @brief BLE manager module for GAP event handling, advertisement management, and connection
+ *        lifecycle.
  *
  * @version 0.1
  * @date 2026-03-03
@@ -12,11 +12,17 @@
  */
 /**************************************************************************************************/
 
+
+/***************************************************************************************************
+ * Includes
+ **************************************************************************************************/
+
+// Standard includes
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include "ble_manager.h"
-#include "ble_gatt_server.h"
+
+// Third-party includes
 #include "esp_log.h"
 #include "esp_peripheral.h"
 #include "host/ble_gap.h"
@@ -24,39 +30,44 @@
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
-#include "state.h"
-#include "log.h"
 #include "services/gap/ble_svc_gap.h"
 
-#define BLE_ADV_SERVICE_UUID 0x1811
+// Project includes
+#include "ble_manager.h"
+#include "ble_gatt_server.h"
+#include "log.h"
+#include "state.h"
+
+
+/***************************************************************************************************
+ * Variable Declarations
+ **************************************************************************************************/
 
 static uint8_t s_own_addr_type;
 
-/**************************************************************************************************/
-/**
- * @name ble_store_config_init
- * @brief Initializes the NimBLE persistent storage configuration for bonding and security data.
- *
- *
- *
- */
-/**************************************************************************************************/
-extern void ble_store_config_init(void);
+
+/***************************************************************************************************
+ * Function Declarations
+ **************************************************************************************************/
 
 /**************************************************************************************************/
 /**
  * @name ble_gap_event_handler
- * @brief Handles GAP events such as connection, disconnection, advertising completion,
- *        and security events for logging and state management.
+ * @brief Handles GAP events such as connection, disconnection, advertising completion, and security
+ *        events for logging and state management.
  *
+ * @param event Pointer to the GAP event structure containing event type and event-specific data.
+ * @param arg User-provided argument passed to the GAP event handler (typically NULL).
  *
- * @param event
- * @param arg
- *
- * @return int
+ * @return int Zero to indicate successful event handling, or event-specific return codes.
  */
 /**************************************************************************************************/
 static int ble_gap_event_handler(struct ble_gap_event *event, void *arg);
+
+
+/***************************************************************************************************
+ * Function Definitions
+ **************************************************************************************************/
 
 /**************************************************************************************************/
 /**
@@ -94,7 +105,6 @@ static void ble_convert_addr(const uint8_t *p_addr, char *p_string, size_t p_str
         ESP_LOGE(s_tag, "Invalid parameters for address conversion.");
     }
 }
-
 
 /**************************************************************************************************/
 /**
@@ -166,50 +176,97 @@ static void ble_log_conn(struct ble_gap_conn_desc *p_desc)
     }
 }
 
+/**************************************************************************************************/
+/**
+ * @name ble_start_advertising
+ * @brief Configures and initiates BLE advertisement with device name, service UUID, and TX power.
+ *
+ * This function sets up advertisement fields including device name, service UUIDs, and TX power
+ * level, then starts continuous undirected general discoverable advertising. Any errors during
+ * configuration or advertisement startup are logged but do not halt execution.
+ *
+ * @return void
+ */
+/**************************************************************************************************/
 static void ble_start_advertising(void)
 {
-    struct ble_gap_adv_params adv_params;
+    // Define return code variable for error handling.
+    int ret_code = 0;
+
+    // Declare advertising data and parameters.
     struct ble_hs_adv_fields fields;
-    const char *name;
-    int rc;
-
+    struct ble_gap_adv_params params;
+    
+    // Ensure advertising data and parameters are zero-initialized.
     memset(&fields, 0, sizeof(fields));
+    memset(&params, 0, sizeof(params));
 
-    fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
-    fields.tx_pwr_lvl_is_present = 1;
-    fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
-
-    name = ble_svc_gap_device_name();
+    // Set the device name in the advertising data.
+    const char *name = (const char *)ble_svc_gap_device_name();
     fields.name = (uint8_t *)name;
     fields.name_len = strlen(name);
     fields.name_is_complete = 1;
 
+    // Set the service UUIDs in the advertising data.
     fields.uuids16 = (ble_uuid16_t[]){BLE_UUID16_INIT(BLE_ADV_SERVICE_UUID)};
     fields.num_uuids16 = 1;
     fields.uuids16_is_complete = 1;
 
-    rc = ble_gap_adv_set_fields(&fields);
-    if (rc != 0) {
-        ESP_LOGI(s_tag, "error setting advertisement data; rc=%d\n", rc);
-        return;
+    // Set the advertising flags.
+    fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
+
+    // Set the advertising TX power level.
+    fields.tx_pwr_lvl_is_present = 1;
+    fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
+
+    // Configure advertising parameters for undirected connectable mode.
+    params.conn_mode = BLE_GAP_CONN_MODE_UND;
+    params.disc_mode = BLE_GAP_DISC_MODE_GEN;
+
+    // Set the advertising data and handle any errors.
+    ret_code = ble_gap_adv_set_fields(&fields);
+    if (ret_code != 0)
+    {
+        ESP_LOGE(
+            s_tag,
+            "Unsuccessful setting advertisement data\n"
+            "\tret_code=%d\n",
+            ret_code
+        );
     }
 
-    memset(&adv_params, 0, sizeof(adv_params));
-    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
-    adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
-
-    rc = ble_gap_adv_start(s_own_addr_type,
-                           NULL,
-                           BLE_HS_FOREVER,
-                           &adv_params,
-                           ble_gap_event_handler,
-                           NULL);
-    if (rc != 0) {
-        ESP_LOGI(s_tag, "error enabling advertisement; rc=%d\n", rc);
-        return;
+    // Start advertising and handle any errors.
+    ret_code = ble_gap_adv_start(
+        s_own_addr_type,
+        NULL,
+        BLE_HS_FOREVER,
+        &params,
+        ble_gap_event_handler,
+        NULL
+    );
+    if (ret_code != 0)
+    {
+        ESP_LOGE(
+            s_tag,
+            "Unsuccessful enabling advertisement.\n"
+            "\tret_code=%d\n",
+            ret_code
+        );
     }
 }
 
+/**************************************************************************************************/
+/**
+ * @name ble_gap_event_handler
+ * @brief Handles GAP events such as connection, disconnection, advertising completion, and security
+ *        events for logging and state management.
+ *
+ * @param event Pointer to the GAP event structure containing event type and event-specific data.
+ * @param arg User-provided argument passed to the GAP event handler (typically NULL).
+ *
+ * @return int Zero to indicate successful event handling, or event-specific return codes.
+ */
+/**************************************************************************************************/
 static int ble_gap_event_handler(struct ble_gap_event *event, void *arg)
 {
     (void)arg;
