@@ -85,9 +85,8 @@ def _float32_mono_to_pcm16_bytes(audio_mono: np.ndarray, expected_samples: int) 
     return clipped.astype(np.int16).tobytes()
 
 
-def audio_callback(audio_bytes: bytes, channels: int) -> bytes:
+def process_audio_callback(audio_bytes: bytes, channels: int) -> bytes:
     interleaved = _decode_interleaved_channels(audio_bytes, channels)
     selected_channels = _select_adapter_channels(interleaved)
-    # mono_float32 = _get_adapter().process_chunk(selected_channels)
-    mono_float32 = selected_channels[::4]
+    mono_float32 = _get_adapter().process_chunk(selected_channels)
     return _float32_mono_to_pcm16_bytes(mono_float32, expected_samples=interleaved.shape[0])

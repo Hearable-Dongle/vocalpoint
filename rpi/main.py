@@ -8,25 +8,27 @@ from audio import Audio_Interface
 from usb import USB_Interface
 from config import Session_Config
 from i2c import I2C_Interface
-from audio_api import audio_callback
+from audio_api import process_audio_callback
 
 
 def audio_callback(audio_bytes: bytes, channels: int) -> bytes:
     """Callback that receives audio frame and sends to Bluetooth sink."""
     # # Convert bytes to numpy array
-    # audio_int16 = np.frombuffer(audio_bytes, dtype=np.int16)
-    
-    # # Extract only the first channel from interleaved audio data
-    # # PyAudio delivers interleaved channels: [L0, R0, C0, LFE0, SL0, SR0, L1, R1, ...]
-    # # So we take every channels-th sample starting from index 0
-    # first_channel = audio_int16[::channels]  # Get samples 0, 6, 12, 18, ... (first channel)
-    
-    # # Convert back to bytes
-    # output_bytes = first_channel.astype(np.int16).tobytes()
+    NAIVE_PASSTHROUGH = False
+    if NAIVE_PASSTHROUGH:
+        audio_int16 = np.frombuffer(audio_bytes, dtype=np.int16)
+        
+        # Extract only the first channel from interleaved audio data
+        # PyAudio delivers interleaved channels: [L0, R0, C0, LFE0, SL0, SR0, L1, R1, ...]
+        # So we take every channels-th sample starting from index 0
+        first_channel = audio_int16[::channels]  # Get samples 0, 6, 12, 18, ... (first channel)
+        
+        # Convert back to bytes
+        output_bytes = first_channel.astype(np.int16).tobytes()
 
-    # return output_bytes
+        return output_bytes
 
-    return audio_callback(audio_bytes, channels)
+    return process_audio_callback(audio_bytes, channels)
     
 
 def main_callback() -> bool:
