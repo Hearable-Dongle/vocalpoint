@@ -1,0 +1,77 @@
+{
+  "recordingId": "nano-symp-just-noise_respeaker3000",
+  "sessionId": "3d153b2e7496",
+  "startedAtIso": "2026-03-18T18:30:38.587Z",
+  "stoppedAtIso": "2026-03-18T18:31:05.160Z",
+  "status": "ready",
+  "deviceName": "ReSpeaker3000",
+  "micArrayProfile": "ReSpeaker3000",
+  "notes": "Converted from validate/nano-symp-just-noise source; source channels mapped into ReSpeaker3000 active channels 1-4, channels 0 and 5 padded with silence.",
+  "speakers": [],
+  "artifacts": {
+    "sampleRateHz": 48000,
+    "channels": [
+      {
+        "channelIndex": 0,
+        "filename": "channel_000.wav"
+      },
+      {
+        "channelIndex": 1,
+        "filename": "channel_001.wav"
+      },
+      {
+        "channelIndex": 2,
+        "filename": "channel_002.wav"
+      },
+      {
+        "channelIndex": 3,
+        "filename": "channel_003.wav"
+      },
+      {
+        "channelIndex": 4,
+        "filename": "channel_004.wav"
+      },
+      {
+        "channelIndex": 5,
+        "filename": "channel_005.wav"
+      }
+    ]
+  },
+  "validation": {
+    "captureType": "noise",
+    "noiseOnly": true,
+    "identifier": "nano-symp-just-noise_respeaker3000",
+    "durationSec": 25.08,
+    "micProfile": {
+      "name": "ReSpeaker3000",
+      "sampleRateHz": 16000,
+      "channelCount": 6,
+      "activeChannelMap": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "channelDoaDeg": {
+        "1": 225.0,
+        "2": 45.0,
+        "3": 135.0,
+        "4": 315.0
+      },
+      "sideLengthM": 0.0457
+    },
+    "source": {
+      "collectionPath": "validate/nano-symp-just-noise/collection.json",
+      "originalRecordingId": "recording-c85clvq4",
+      "originalMicArrayProfile": "respeaker_xvf3800_0650",
+      "channelMapping": {
+        "0": "silence",
+        "1": "source_channel_0",
+        "2": "source_channel_1",
+        "3": "source_channel_2",
+        "4": "source_channel_3",
+        "5": "silence"
+      }
+    }
+  }
+}

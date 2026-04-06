@@ -1,0 +1,14 @@
+{
+  "distance_m": 3.0,
+  "identifier": "matthew_d3m_doa0deg",
+  "mode": "own_voice_suppression",
+  "noise_recording_id": "matthew_d3m_doa0deg",
+  "sii_delta": -0.04840015145766935,
+  "sii_processed": 0.27946239037507303,
+  "sii_raw": 0.3278625418327424,
+  "snr_delta": -12.14441440105915,
+  "snr_processed": -9.069623943647944,
+  "snr_raw": 3.074790457411206,
+  "speaker_direction_deg": 0.0,
+  "speaker_recording_id": "matthew_d3m_doa0deg"
+}

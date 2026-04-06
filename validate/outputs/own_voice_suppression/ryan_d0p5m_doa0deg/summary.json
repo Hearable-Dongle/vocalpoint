@@ -1,0 +1,14 @@
+{
+  "distance_m": 0.5,
+  "identifier": "ryan_d0p5m_doa0deg",
+  "mode": "own_voice_suppression",
+  "noise_recording_id": "ryan_d0p5m_doa0deg",
+  "sii_delta": -0.1398436498821845,
+  "sii_processed": 0.2789537841529274,
+  "sii_raw": 0.4187974340351119,
+  "snr_delta": -12.401487903245538,
+  "snr_processed": -9.141208335275447,
+  "snr_raw": 3.260279567970092,
+  "speaker_direction_deg": 0.0,
+  "speaker_recording_id": "ryan_d0p5m_doa0deg"
+}

@@ -1,0 +1,52 @@
+{
+  "collectionId": "nano-symp-just-noise",
+  "title": "Capstone data collection",
+  "notes": "",
+  "createdAtIso": "2026-03-18T18:30:18.233Z",
+  "deviceName": "XVF3800",
+  "micArrayProfile": "respeaker_xvf3800_0650",
+  "recordings": [
+    {
+      "recordingId": "recording-c85clvq4",
+      "sessionId": "3d153b2e7496",
+      "startedAtIso": "2026-03-18T18:30:38.587Z",
+      "stoppedAtIso": "2026-03-18T18:31:05.160Z",
+      "status": "ready",
+      "deviceName": "XVF3800",
+      "micArrayProfile": "respeaker_xvf3800_0650",
+      "notes": "",
+      "speakers": [
+        {
+          "speakerName": "amber-otter",
+          "speakingPeriods": [
+            {
+              "startSec": 0,
+              "endSec": 0,
+              "directionDeg": 0
+            }
+          ]
+        }
+      ],
+      "error": null,
+      "sampleRateHz": 48000,
+      "channels": [
+        {
+          "channelIndex": 0,
+          "filename": "channel_000.wav"
+        },
+        {
+          "channelIndex": 1,
+          "filename": "channel_001.wav"
+        },
+        {
+          "channelIndex": 2,
+          "filename": "channel_002.wav"
+        },
+        {
+          "channelIndex": 3,
+          "filename": "channel_003.wav"
+        }
+      ]
+    }
+  ]
+}
