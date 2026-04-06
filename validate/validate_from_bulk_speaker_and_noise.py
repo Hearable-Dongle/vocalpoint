@@ -56,7 +56,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--processing-mode",
-        choices=("callback", "local", "passthrough"),
+        choices=("callback", "entrypoint", "local", "passthrough", "research_adapter"),
         default="callback",
         help="Validation processing path. Default: callback.",
     )

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import sys
+import types
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -268,6 +270,149 @@ def run_callback_pipeline(audio_mc: np.ndarray, *, normalize_rms: bool = False) 
     return np.concatenate(outputs, axis=0).astype(np.float32, copy=False)
 
 
+def _load_research_adapter_class():
+    from realtime_pipeline import RealtimeIntelligibilityAdapter  # noqa: E402
+
+    return RealtimeIntelligibilityAdapter
+
+
+def _research_adapter_profile_name(mic_profile_name: str) -> str:
+    if str(mic_profile_name) == _RESPEAKER3000_PROFILE_NAME:
+        return "respeaker_v3_0457"
+    return "respeaker_xvf3800_0650"
+
+
+def run_research_adapter_pipeline(
+    audio_mc: np.ndarray,
+    *,
+    mic_profile_name: str,
+    own_voice_suppression_enabled: bool,
+    own_voice_suppression_doa_deg: float | None,
+) -> np.ndarray:
+    frame = np.asarray(audio_mc, dtype=np.float32)
+    if frame.ndim != 2:
+        raise ValueError("audio_mc must be shape (samples, channels)")
+    if frame.shape[1] < 1:
+        raise ValueError("audio_mc must include at least one channel")
+
+    profile = get_mic_profile(str(mic_profile_name))
+    channel_map = tuple(int(idx) for idx in profile["channel_map"])
+    selected = _select_active_channels(frame, channel_map)
+    mic_geometry_xyz = np.asarray(profile["mic_geometry_xyz"], dtype=np.float64)
+    adapter_class = _load_research_adapter_class()
+    adapter = adapter_class(
+        mic_array_profile=_research_adapter_profile_name(str(mic_profile_name)),
+        mic_geometry_xyz=mic_geometry_xyz,
+        input_sample_rate_hz=int(_INPUT_SAMPLE_RATE_HZ),
+        processing_sample_rate_hz=int(_INPUT_SAMPLE_RATE_HZ),
+        enable_resample=False,
+        localization_backend="capon_1src",
+        beamforming_mode="delay_sum",
+        postfilter_method="rnnoise",
+        postfilter_enabled=True,
+        fast_frame_ms=10,
+        localization_hop_ms=200,
+        localization_window_ms=200,
+        localization_grid_size=72,
+        localization_vad_enabled=False,
+        separation_mode="single_dominant_no_separator",
+        algorithm_mode="speaker_tracking_single_active",
+        own_voice_suppression_enabled=bool(own_voice_suppression_enabled),
+        own_voice_suppression_doa_deg=own_voice_suppression_doa_deg,
+    )
+    outputs: list[np.ndarray] = []
+    frame_samples = 160
+    total_samples = int(selected.shape[0])
+    try:
+        for start in range(0, total_samples, frame_samples):
+            chunk = selected[start : start + frame_samples, :]
+            original_len = int(chunk.shape[0])
+            if original_len < frame_samples:
+                chunk = np.pad(chunk, ((0, frame_samples - original_len), (0, 0)))
+            pcm = np.clip(np.round(chunk * 32767.0), -32768.0, 32767.0).astype(np.int16)
+            per_channel = [np.ascontiguousarray(pcm[:, idx], dtype=np.int16) for idx in range(pcm.shape[1])]
+            out = np.asarray(adapter.process_chunk(per_channel), dtype=np.float32).reshape(-1)
+            outputs.append(np.asarray(out[:original_len], dtype=np.float32))
+    finally:
+        adapter.close()
+
+    if not outputs:
+        return np.zeros((0,), dtype=np.float32)
+    return np.concatenate(outputs, axis=0).astype(np.float32, copy=False)
+
+
+_ROOT_AUDIO_CALLBACK = None
+
+
+def _load_root_audio_callback():
+    global _ROOT_AUDIO_CALLBACK
+    if _ROOT_AUDIO_CALLBACK is not None:
+        return _ROOT_AUDIO_CALLBACK
+
+    gi_module = types.ModuleType("gi")
+    gi_repository = types.ModuleType("gi.repository")
+    gi_repository.GLib = types.SimpleNamespace(
+        timeout_add=lambda *args, **kwargs: None,
+        MainLoop=lambda: types.SimpleNamespace(run=lambda: None),
+    )
+    gi_module.repository = gi_repository
+
+    stub_modules = {
+        "gi": gi_module,
+        "gi.repository": gi_repository,
+        "bt": types.SimpleNamespace(BT_Interface=object),
+        "audio": types.SimpleNamespace(Audio_Interface=object),
+        "usb": types.SimpleNamespace(USB_Interface=object),
+        "config": types.SimpleNamespace(Session_Config=object),
+        "i2c": types.SimpleNamespace(I2C_Interface=object),
+        "process_audio": sys.modules["rpi.process_audio"],
+    }
+    previous_modules = {name: sys.modules.get(name) for name in stub_modules}
+    try:
+        for name, module in stub_modules.items():
+            sys.modules[name] = module
+        module_path = REPO_ROOT / "rpi" / "main.py"
+        spec = importlib.util.spec_from_file_location("validate_runtime_rpi_main", module_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"unable to load rpi.main from {module_path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _ROOT_AUDIO_CALLBACK = module.audio_callback
+        return _ROOT_AUDIO_CALLBACK
+    finally:
+        for name, previous in previous_modules.items():
+            if previous is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = previous
+
+
+def run_root_entrypoint_pipeline(audio_mc: np.ndarray) -> np.ndarray:
+    frame = np.asarray(audio_mc, dtype=np.float32)
+    if frame.ndim != 2:
+        raise ValueError("audio_mc must be shape (samples, channels)")
+    if frame.shape[1] < 1:
+        raise ValueError("audio_mc must include at least one channel")
+
+    audio_callback = _load_root_audio_callback()
+    _reset_processor_for_tests()
+    outputs: list[np.ndarray] = []
+    frame_samples = 160
+    total_samples = int(frame.shape[0])
+    for start in range(0, total_samples, frame_samples):
+        chunk = frame[start : start + frame_samples, :]
+        original_len = int(chunk.shape[0])
+        if original_len < frame_samples:
+            chunk = np.pad(chunk, ((0, frame_samples - original_len), (0, 0)))
+        pcm = np.clip(np.round(chunk * 32767.0), -32768.0, 32767.0).astype(np.int16)
+        out_bytes = audio_callback(pcm.tobytes(), int(frame.shape[1]))
+        out = np.frombuffer(out_bytes, dtype=np.int16).astype(np.float32) / 32767.0
+        outputs.append(np.asarray(out[:original_len], dtype=np.float32))
+    if not outputs:
+        return np.zeros((0,), dtype=np.float32)
+    return np.concatenate(outputs, axis=0).astype(np.float32, copy=False)
+
+
 def _align_estimate_to_reference(
     reference: np.ndarray,
     estimate: np.ndarray,
@@ -338,6 +483,15 @@ def evaluate_mode(
         processed = np.asarray(raw_mono, dtype=np.float32).copy()
     elif str(processing_mode) == "callback":
         processed = run_callback_pipeline(mix_mc, normalize_rms=False)
+    elif str(processing_mode) == "research_adapter":
+        processed = run_research_adapter_pipeline(
+            mix_mc,
+            mic_profile_name=str(speaker_recording.mic_array_profile),
+            own_voice_suppression_enabled=bool(suppression_enabled),
+            own_voice_suppression_doa_deg=suppression_doa_deg,
+        )
+    elif str(processing_mode) == "entrypoint":
+        processed = run_root_entrypoint_pipeline(mix_mc)
     elif str(processing_mode) == "local":
         processed = process_multichannel_audio(
             mix_mc,

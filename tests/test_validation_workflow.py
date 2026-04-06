@@ -224,3 +224,130 @@ def test_evaluate_mode_callback_uses_live_callback(monkeypatch, tmp_path: Path) 
     assert all(normalize_rms is False for _, _, normalize_rms in calls)
     expected = np.full((mix_mc.shape[0],), 1234 / 32767.0, dtype=np.float32)
     assert np.allclose(result["processed_audio"], expected)
+
+
+def test_evaluate_mode_entrypoint_uses_root_audio_callback(monkeypatch, tmp_path: Path) -> None:
+    speaker_dir = _write_recording(tmp_path / "speakers", recording_id="speaker-005", distance_m=1.5, direction_deg=15.0, samples=400)
+    noise_dir = _write_recording(tmp_path / "noise", recording_id="noise-005", distance_m=None, direction_deg=0.0, samples=400)
+    speaker_recording = validation_common.load_recording(speaker_dir)
+    noise_recording = validation_common.load_recording(noise_dir)
+    speaker_mc, noise_mc = validation_common.align_recordings(speaker_recording, noise_recording)
+    channel_map = validation_common.active_channel_map_for_recording(speaker_recording)
+    mix_mc = validation_common.mix_speaker_and_noise(speaker_mc, noise_mc, channel_map=channel_map)
+    clean_ref_mono = validation_common.reference_mono_from_speaker(speaker_mc, channel_map=channel_map)
+
+    calls: list[tuple[int, int]] = []
+
+    def fake_entrypoint(audio_bytes: bytes, channels: int) -> bytes:
+        calls.append((len(audio_bytes), channels))
+        frame_samples = len(audio_bytes) // 2 // channels
+        out = np.full((frame_samples,), -2345, dtype=np.int16)
+        return out.tobytes()
+
+    monkeypatch.setattr(validation_common, "_load_root_audio_callback", lambda: fake_entrypoint)
+    monkeypatch.setattr(validation_common, "_reset_processor_for_tests", lambda: None)
+
+    result = validation_common.evaluate_mode(
+        mix_mc=mix_mc,
+        clean_ref_mono=clean_ref_mono,
+        speaker_recording=speaker_recording,
+        mode="amplification",
+        suppression_enabled=False,
+        suppression_doa_deg=None,
+        processing_mode="entrypoint",
+    )
+
+    assert len(calls) == 3
+    assert all(channels == 6 for _, channels in calls)
+    expected = np.full((mix_mc.shape[0],), -2345 / 32767.0, dtype=np.float32)
+    assert np.allclose(result["processed_audio"], expected)
+
+
+def test_evaluate_mode_research_adapter_uses_research_runner(monkeypatch, tmp_path: Path) -> None:
+    speaker_dir = _write_recording(tmp_path / "speakers", recording_id="speaker-006", distance_m=1.5, direction_deg=25.0)
+    noise_dir = _write_recording(tmp_path / "noise", recording_id="noise-006", distance_m=None, direction_deg=0.0)
+    speaker_recording = validation_common.load_recording(speaker_dir)
+    noise_recording = validation_common.load_recording(noise_dir)
+    speaker_mc, noise_mc = validation_common.align_recordings(speaker_recording, noise_recording)
+    channel_map = validation_common.active_channel_map_for_recording(speaker_recording)
+    mix_mc = validation_common.mix_speaker_and_noise(speaker_mc, noise_mc, channel_map=channel_map)
+    clean_ref_mono = validation_common.reference_mono_from_speaker(speaker_mc, channel_map=channel_map)
+
+    captured = {}
+
+    def fake_research_runner(audio_mc, *, mic_profile_name, own_voice_suppression_enabled, own_voice_suppression_doa_deg):
+        captured["shape"] = tuple(audio_mc.shape)
+        captured["mic_profile_name"] = mic_profile_name
+        captured["suppression_enabled"] = own_voice_suppression_enabled
+        captured["suppression_doa_deg"] = own_voice_suppression_doa_deg
+        return np.mean(audio_mc[:, [1, 2, 3, 4]], axis=1).astype(np.float32)
+
+    monkeypatch.setattr(validation_common, "run_research_adapter_pipeline", fake_research_runner)
+
+    result = validation_common.evaluate_mode(
+        mix_mc=mix_mc,
+        clean_ref_mono=clean_ref_mono,
+        speaker_recording=speaker_recording,
+        mode="own_voice_suppression",
+        suppression_enabled=True,
+        suppression_doa_deg=25.0,
+        processing_mode="research_adapter",
+    )
+
+    assert captured["shape"] == tuple(mix_mc.shape)
+    assert captured["mic_profile_name"] == "ReSpeaker3000"
+    assert captured["suppression_enabled"] is True
+    assert captured["suppression_doa_deg"] == 25.0
+    assert result["processing_mode"] == "research_adapter"
+
+
+def test_run_research_adapter_pipeline_uses_respeaker3000_active_channels_and_params(monkeypatch) -> None:
+    calls = {}
+
+    class FakeAdapter:
+        def __init__(self, **kwargs):
+            calls["init_kwargs"] = kwargs
+            calls["process_shapes"] = []
+            calls["process_dtypes"] = []
+            calls["closed"] = False
+
+        def process_chunk(self, channels):
+            calls["process_shapes"].append(tuple(np.asarray(ch).shape[0] for ch in channels))
+            calls["process_dtypes"].append(tuple(np.asarray(ch).dtype for ch in channels))
+            frame_len = int(np.asarray(channels[0]).shape[0])
+            return np.full((frame_len,), 1111 / 32767.0, dtype=np.float32)
+
+        def close(self):
+            calls["closed"] = True
+
+    monkeypatch.setattr(validation_common, "_load_research_adapter_class", lambda: FakeAdapter)
+
+    audio_mc = np.zeros((400, 6), dtype=np.float32)
+    audio_mc[:, 1] = 0.1
+    audio_mc[:, 2] = 0.2
+    audio_mc[:, 3] = 0.3
+    audio_mc[:, 4] = 0.4
+
+    out = validation_common.run_research_adapter_pipeline(
+        audio_mc,
+        mic_profile_name="ReSpeaker3000",
+        own_voice_suppression_enabled=True,
+        own_voice_suppression_doa_deg=335.0,
+    )
+
+    assert out.shape == (400,)
+    assert len(calls["process_shapes"]) == 3
+    assert all(shape == (160, 160, 160, 160) for shape in calls["process_shapes"])
+    assert all(all(dtype == np.int16 for dtype in dtypes) for dtypes in calls["process_dtypes"])
+    assert calls["init_kwargs"]["mic_array_profile"] == "respeaker_v3_0457"
+    assert calls["init_kwargs"]["input_sample_rate_hz"] == 16000
+    assert calls["init_kwargs"]["processing_sample_rate_hz"] == 16000
+    assert calls["init_kwargs"]["enable_resample"] is False
+    assert calls["init_kwargs"]["beamforming_mode"] == "delay_sum"
+    assert calls["init_kwargs"]["postfilter_method"] == "rnnoise"
+    assert calls["init_kwargs"]["localization_backend"] == "capon_1src"
+    assert calls["init_kwargs"]["localization_vad_enabled"] is False
+    assert calls["init_kwargs"]["own_voice_suppression_enabled"] is True
+    assert calls["init_kwargs"]["own_voice_suppression_doa_deg"] == 335.0
+    assert np.asarray(calls["init_kwargs"]["mic_geometry_xyz"]).shape == (4, 3)
+    assert calls["closed"] is True
