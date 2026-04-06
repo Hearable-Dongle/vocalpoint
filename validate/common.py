@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 from scipy.io import wavfile
+from scipy.signal import correlate
 from scipy.signal import resample_poly
 
 
@@ -21,6 +22,7 @@ from verification.sii_utils import compute_sii  # noqa: E402
 from rpi.process_audio import (  # noqa: E402
     _INPUT_SAMPLE_RATE_HZ,
     _RESPEAKER3000_PROFILE_NAME,
+    get_mic_profile,
     process_multichannel_audio,
 )
 
@@ -129,6 +131,31 @@ def recording_to_multichannel_float32(recording: RecordingData) -> np.ndarray:
     return np.stack([_to_float32(channel) for channel in recording.channels], axis=1).astype(np.float32, copy=False)
 
 
+def active_channel_map_for_recording(recording: RecordingData) -> tuple[int, ...]:
+    try:
+        profile = get_mic_profile(str(recording.mic_array_profile))
+        return tuple(int(idx) for idx in profile["channel_map"])
+    except Exception:
+        validation = dict(recording.metadata.get("validation", {}))
+        mic_profile = dict(validation.get("micProfile", {}))
+        channel_map = mic_profile.get("activeChannelMap")
+        if channel_map:
+            return tuple(int(idx) for idx in channel_map)
+    return tuple(range(len(recording.channels)))
+
+
+def _select_active_channels(audio_mc: np.ndarray, channel_map: tuple[int, ...]) -> np.ndarray:
+    arr = np.asarray(audio_mc, dtype=np.float32)
+    if arr.ndim != 2:
+        raise ValueError("audio_mc must be shape (samples, channels)")
+    if not channel_map:
+        raise ValueError("channel_map must not be empty")
+    required_channels = max(int(idx) for idx in channel_map) + 1
+    if arr.shape[1] < required_channels:
+        raise ValueError(f"audio_mc must have at least {required_channels} channels, got {arr.shape[1]}")
+    return np.asarray(arr[:, channel_map], dtype=np.float32)
+
+
 def maybe_resample_audio(audio: np.ndarray, *, input_rate_hz: int, output_rate_hz: int) -> np.ndarray:
     if int(input_rate_hz) == int(output_rate_hz):
         return np.asarray(audio, dtype=np.float32)
@@ -162,26 +189,41 @@ def align_recordings(
     return speaker_mc[:sample_count, :], noise_mc[:sample_count, :]
 
 
-def rms_match_noise_to_speaker(speaker_mc: np.ndarray, noise_mc: np.ndarray, eps: float = 1e-8) -> np.ndarray:
-    speaker_rms = float(np.sqrt(np.mean(np.asarray(speaker_mc, dtype=np.float64) ** 2) + eps))
-    noise_rms = float(np.sqrt(np.mean(np.asarray(noise_mc, dtype=np.float64) ** 2) + eps))
+def rms_match_noise_to_speaker(
+    speaker_mc: np.ndarray,
+    noise_mc: np.ndarray,
+    *,
+    channel_map: tuple[int, ...],
+    eps: float = 1e-8,
+) -> np.ndarray:
+    speaker_active = _select_active_channels(speaker_mc, channel_map)
+    noise_active = _select_active_channels(noise_mc, channel_map)
+    speaker_rms = float(np.sqrt(np.mean(np.asarray(speaker_active, dtype=np.float64) ** 2) + eps))
+    noise_rms = float(np.sqrt(np.mean(np.asarray(noise_active, dtype=np.float64) ** 2) + eps))
     if noise_rms <= eps:
         return np.zeros_like(noise_mc, dtype=np.float32)
     scale = speaker_rms / noise_rms
     return np.asarray(noise_mc * scale, dtype=np.float32)
 
 
-def mix_speaker_and_noise(speaker_mc: np.ndarray, noise_mc: np.ndarray) -> np.ndarray:
-    matched_noise = rms_match_noise_to_speaker(speaker_mc, noise_mc)
+def mix_speaker_and_noise(
+    speaker_mc: np.ndarray,
+    noise_mc: np.ndarray,
+    *,
+    channel_map: tuple[int, ...],
+) -> np.ndarray:
+    matched_noise = rms_match_noise_to_speaker(speaker_mc, noise_mc, channel_map=channel_map)
     return np.asarray(0.5 * (speaker_mc + matched_noise), dtype=np.float32)
 
 
-def reference_mono_from_speaker(speaker_mc: np.ndarray) -> np.ndarray:
-    return np.mean(np.asarray(speaker_mc, dtype=np.float32), axis=1).astype(np.float32, copy=False)
+def reference_mono_from_speaker(speaker_mc: np.ndarray, *, channel_map: tuple[int, ...]) -> np.ndarray:
+    active = _select_active_channels(speaker_mc, channel_map)
+    return np.mean(active, axis=1).astype(np.float32, copy=False)
 
 
-def degraded_raw_mono_from_mix(mix_mc: np.ndarray) -> np.ndarray:
-    return np.mean(np.asarray(mix_mc, dtype=np.float32), axis=1).astype(np.float32, copy=False)
+def degraded_raw_mono_from_mix(mix_mc: np.ndarray, *, channel_map: tuple[int, ...]) -> np.ndarray:
+    active = _select_active_channels(mix_mc, channel_map)
+    return np.mean(active, axis=1).astype(np.float32, copy=False)
 
 
 def save_wav(path: Path, audio: np.ndarray, *, sample_rate_hz: int) -> None:
@@ -195,6 +237,37 @@ def save_wav(path: Path, audio: np.ndarray, *, sample_rate_hz: int) -> None:
     wavfile.write(path, int(sample_rate_hz), np.asarray(np.round(pcm * 32767.0), dtype=np.int16))
 
 
+def _align_estimate_to_reference(
+    reference: np.ndarray,
+    estimate: np.ndarray,
+    *,
+    max_lag_samples: int | None = None,
+) -> tuple[np.ndarray, int]:
+    ref = np.asarray(reference, dtype=np.float32).reshape(-1)
+    est = np.asarray(estimate, dtype=np.float32).reshape(-1)
+    sample_count = min(ref.shape[0], est.shape[0])
+    ref = ref[:sample_count]
+    est = est[:sample_count]
+    if sample_count <= 1:
+        return est, 0
+    corr = correlate(est, ref, mode="full", method="fft")
+    lags = np.arange(-(ref.shape[0] - 1), est.shape[0], dtype=np.int64)
+    if max_lag_samples is not None and max_lag_samples >= 0:
+        mask = np.abs(lags) <= int(max_lag_samples)
+        corr = corr[mask]
+        lags = lags[mask]
+    best_lag = int(lags[int(np.argmax(corr))])
+    aligned = np.zeros_like(est, dtype=np.float32)
+    if best_lag > 0:
+        aligned[: sample_count - best_lag] = est[best_lag:]
+    elif best_lag < 0:
+        shift = -best_lag
+        aligned[shift:] = est[: sample_count - shift]
+    else:
+        aligned[:] = est
+    return aligned, best_lag
+
+
 def compute_metrics(clean_ref_mono: np.ndarray, degraded_raw_mono: np.ndarray, processed_mono: np.ndarray, *, sample_rate_hz: int) -> dict[str, float]:
     ref = np.asarray(clean_ref_mono, dtype=np.float32).reshape(-1)
     raw = np.asarray(degraded_raw_mono, dtype=np.float32).reshape(-1)
@@ -203,13 +276,18 @@ def compute_metrics(clean_ref_mono: np.ndarray, degraded_raw_mono: np.ndarray, p
     ref = ref[:sample_count]
     raw = raw[:sample_count]
     proc = proc[:sample_count]
+    max_lag_samples = int(round(0.5 * float(sample_rate_hz)))
+    raw_aligned, raw_lag_samples = _align_estimate_to_reference(ref, raw, max_lag_samples=max_lag_samples)
+    proc_aligned, proc_lag_samples = _align_estimate_to_reference(ref, proc, max_lag_samples=max_lag_samples)
     return {
-        "snr_raw": float(calc_snr(ref, raw)),
-        "snr_processed": float(calc_snr(ref, proc)),
-        "snr_delta": float(calc_snr(ref, proc) - calc_snr(ref, raw)),
-        "sii_raw": float(compute_sii(ref, raw, int(sample_rate_hz))),
-        "sii_processed": float(compute_sii(ref, proc, int(sample_rate_hz))),
-        "sii_delta": float(compute_sii(ref, proc, int(sample_rate_hz)) - compute_sii(ref, raw, int(sample_rate_hz))),
+        "snr_raw": float(calc_snr(ref, raw_aligned)),
+        "snr_processed": float(calc_snr(ref, proc_aligned)),
+        "snr_delta": float(calc_snr(ref, proc_aligned) - calc_snr(ref, raw_aligned)),
+        "sii_raw": float(compute_sii(ref, raw_aligned, int(sample_rate_hz))),
+        "sii_processed": float(compute_sii(ref, proc_aligned, int(sample_rate_hz))),
+        "sii_delta": float(compute_sii(ref, proc_aligned, int(sample_rate_hz)) - compute_sii(ref, raw_aligned, int(sample_rate_hz))),
+        "raw_lag_samples": int(raw_lag_samples),
+        "processed_lag_samples": int(proc_lag_samples),
     }
 
 
@@ -221,18 +299,26 @@ def evaluate_mode(
     mode: str,
     suppression_enabled: bool,
     suppression_doa_deg: float | None,
+    processing_mode: str = "local",
 ) -> dict[str, Any]:
-    processed = process_multichannel_audio(
-        mix_mc,
-        sample_rate_hz=_INPUT_SAMPLE_RATE_HZ,
-        mic_profile_name=str(speaker_recording.mic_array_profile),
-        own_voice_suppression_enabled=bool(suppression_enabled),
-        own_voice_suppression_doa_deg=suppression_doa_deg,
-    )
-    raw_mono = degraded_raw_mono_from_mix(mix_mc)
+    channel_map = active_channel_map_for_recording(speaker_recording)
+    raw_mono = degraded_raw_mono_from_mix(mix_mc, channel_map=channel_map)
+    if str(processing_mode) == "passthrough":
+        processed = np.asarray(raw_mono, dtype=np.float32).copy()
+    elif str(processing_mode) == "local":
+        processed = process_multichannel_audio(
+            mix_mc,
+            sample_rate_hz=_INPUT_SAMPLE_RATE_HZ,
+            mic_profile_name=str(speaker_recording.mic_array_profile),
+            own_voice_suppression_enabled=bool(suppression_enabled),
+            own_voice_suppression_doa_deg=suppression_doa_deg,
+        )
+    else:
+        raise ValueError(f"unknown processing_mode: {processing_mode}")
     metrics = compute_metrics(clean_ref_mono, raw_mono, processed, sample_rate_hz=_INPUT_SAMPLE_RATE_HZ)
     return {
         "mode": str(mode),
+        "processing_mode": str(processing_mode),
         "processed_audio": np.asarray(processed, dtype=np.float32),
         "raw_mono": np.asarray(raw_mono, dtype=np.float32),
         "metrics": metrics,
@@ -260,6 +346,7 @@ def save_mode_outputs(
     summary = {
         "identifier": str(identifier),
         "mode": str(result["mode"]),
+        "processing_mode": str(result.get("processing_mode", "local")),
         "speaker_recording_id": str(speaker_recording.recording_id),
         "noise_recording_id": str(noise_recording.recording_id),
         "speaker_direction_deg": float(recording_direction_deg(speaker_recording)),

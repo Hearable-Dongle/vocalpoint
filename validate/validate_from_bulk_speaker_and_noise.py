@@ -10,6 +10,7 @@ if __package__ in {None, ""}:
     from validate.common import (
         AMPLIFICATION_OUTPUT_ROOT,
         SUPPRESSION_OUTPUT_ROOT,
+        active_channel_map_for_recording,
         aggregate_results_by_distance,
         align_recordings,
         discover_recording_dirs,
@@ -27,6 +28,7 @@ else:  # pragma: no cover
     from validate.common import (
         AMPLIFICATION_OUTPUT_ROOT,
         SUPPRESSION_OUTPUT_ROOT,
+        active_channel_map_for_recording,
         aggregate_results_by_distance,
         align_recordings,
         discover_recording_dirs,
@@ -52,6 +54,12 @@ def main() -> None:
         default="recorded",
         help="Noise source to mix with each speaker recording. Default: recorded.",
     )
+    parser.add_argument(
+        "--processing-mode",
+        choices=("local", "passthrough"),
+        default="local",
+        help="Validation processing path. Default: local.",
+    )
     parser.add_argument("--white-noise-seed", type=int, default=0, help="Base random seed for white-noise generation.")
     args = parser.parse_args()
 
@@ -75,8 +83,12 @@ def main() -> None:
             speaker_mc = align_recordings(speaker_recording, speaker_recording)[0]
             noise_mc = generate_white_noise_like(speaker_mc, seed=int(args.white_noise_seed) + len(amplification_rows))
             noise_recording_for_outputs = speaker_recording
-        mix_mc = mix_speaker_and_noise(speaker_mc, noise_mc)
-        clean_ref_mono = reference_mono_from_speaker(speaker_mc)
+        channel_map = active_channel_map_for_recording(speaker_recording)
+        mix_mc = mix_speaker_and_noise(speaker_mc, noise_mc, channel_map=channel_map)
+        clean_ref_mono = reference_mono_from_speaker(
+            speaker_mc,
+            channel_map=channel_map,
+        )
         identifier = identifier_for_recording(speaker_recording)
 
         amplification = evaluate_mode(
@@ -86,6 +98,7 @@ def main() -> None:
             mode="amplification",
             suppression_enabled=False,
             suppression_doa_deg=None,
+            processing_mode=str(args.processing_mode),
         )
         suppression = evaluate_mode(
             mix_mc=mix_mc,
@@ -94,6 +107,7 @@ def main() -> None:
             mode="own_voice_suppression",
             suppression_enabled=True,
             suppression_doa_deg=recording_direction_deg(speaker_recording),
+            processing_mode=str(args.processing_mode),
         )
 
         save_mode_outputs(
@@ -151,6 +165,7 @@ def main() -> None:
             {
                 "speaker_count": len(speaker_dirs),
                 "noise_mode": str(args.noise_mode),
+                "processing_mode": str(args.processing_mode),
                 "amplification_summary_by_distance": amplification_summary,
                 "own_voice_suppression_summary_by_distance": suppression_summary,
             },
