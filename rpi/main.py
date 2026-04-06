@@ -8,7 +8,7 @@ from audio import Audio_Interface
 from usb import USB_Interface
 from config import Session_Config
 from i2c import I2C_Interface
-from process_audio import process_audio_callback
+from audio_api import process_audio_callback
 
 
 def audio_callback(audio_bytes: bytes, channels: int) -> bytes:
