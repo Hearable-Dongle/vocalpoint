@@ -14,20 +14,49 @@ except ImportError:  # pragma: no cover
     from localization import CaponLocalizer
 
 
-_CHANNEL_MAP = (2, 3, 4, 5)
+_RESPEAKER3000_PROFILE_NAME = "ReSpeaker3000"
+_RESPEAKER3800_PROFILE_NAME = "ReSpeaker3800"
+_ACTIVE_MIC_PROFILE_NAME = _RESPEAKER3000_PROFILE_NAME
+_TOTAL_INPUT_CHANNELS = 6
 _INPUT_SAMPLE_RATE_HZ = 16000
 _EXPECTED_FRAME_SAMPLES = 160
 _LOCALIZATION_WINDOW_MS = 200
-_MIC_ARRAY_RADIUS_M = 0.065 / 2.0
-_MIC_GEOMETRY_XYZ = np.array(
-    [
-        [_MIC_ARRAY_RADIUS_M, _MIC_ARRAY_RADIUS_M, 0.0],
-        [-_MIC_ARRAY_RADIUS_M, _MIC_ARRAY_RADIUS_M, 0.0],
-        [-_MIC_ARRAY_RADIUS_M, -_MIC_ARRAY_RADIUS_M, 0.0],
-        [_MIC_ARRAY_RADIUS_M, -_MIC_ARRAY_RADIUS_M, 0.0],
-    ],
-    dtype=np.float64,
-)
+
+
+def _square_geometry_from_side_length(
+    side_length_m: float,
+    *,
+    doa_order_deg: tuple[float, float, float, float],
+) -> np.ndarray:
+    half_side = float(side_length_m) / 2.0
+    doa_to_xyz = {
+        45.0: np.array([half_side, half_side, 0.0], dtype=np.float64),
+        135.0: np.array([-half_side, half_side, 0.0], dtype=np.float64),
+        225.0: np.array([-half_side, -half_side, 0.0], dtype=np.float64),
+        315.0: np.array([half_side, -half_side, 0.0], dtype=np.float64),
+    }
+    return np.stack([doa_to_xyz[float(doa_deg)] for doa_deg in doa_order_deg], axis=0)
+
+
+_MIC_PROFILES = {
+    _RESPEAKER3000_PROFILE_NAME: {
+        "channel_map": (1, 2, 3, 4),
+        "mic_geometry_xyz": _square_geometry_from_side_length(
+            0.0457,
+            doa_order_deg=(225.0, 45.0, 135.0, 315.0),
+        ),
+    },
+    _RESPEAKER3800_PROFILE_NAME: {
+        "channel_map": (2, 3, 4, 5),
+        "mic_geometry_xyz": _square_geometry_from_side_length(
+            0.065,
+            doa_order_deg=(45.0, 135.0, 225.0, 315.0),
+        ),
+    },
+}
+_ACTIVE_MIC_PROFILE = _MIC_PROFILES[_ACTIVE_MIC_PROFILE_NAME]
+_CHANNEL_MAP = tuple(int(idx) for idx in _ACTIVE_MIC_PROFILE["channel_map"])
+_MIC_GEOMETRY_XYZ = np.asarray(_ACTIVE_MIC_PROFILE["mic_geometry_xyz"], dtype=np.float64)
 _OWN_VOICE_SUPPRESSION_ENABLED = True
 _OWN_VOICE_SUPPRESSION_DOA_DEG = 335.0
 
@@ -53,7 +82,7 @@ def _decode_interleaved_channels(audio_bytes: bytes, channels: int) -> np.ndarra
 
 def _select_pipeline_channels(interleaved: np.ndarray) -> list[np.ndarray]:
     channel_count = int(interleaved.shape[1])
-    required_channels = max(_CHANNEL_MAP) + 1
+    required_channels = max(_TOTAL_INPUT_CHANNELS, max(_CHANNEL_MAP) + 1)
     if channel_count < required_channels:
         raise ValueError(
             f"expected at least {required_channels} interleaved channels to map {_CHANNEL_MAP}, got {channel_count}"
