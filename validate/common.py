@@ -22,7 +22,9 @@ from verification.sii_utils import compute_sii  # noqa: E402
 from rpi.process_audio import (  # noqa: E402
     _INPUT_SAMPLE_RATE_HZ,
     _RESPEAKER3000_PROFILE_NAME,
+    _reset_processor_for_tests,
     get_mic_profile,
+    process_audio_callback,
     process_multichannel_audio,
 )
 
@@ -237,6 +239,35 @@ def save_wav(path: Path, audio: np.ndarray, *, sample_rate_hz: int) -> None:
     wavfile.write(path, int(sample_rate_hz), np.asarray(np.round(pcm * 32767.0), dtype=np.int16))
 
 
+def run_callback_pipeline(audio_mc: np.ndarray, *, normalize_rms: bool = False) -> np.ndarray:
+    frame = np.asarray(audio_mc, dtype=np.float32)
+    if frame.ndim != 2:
+        raise ValueError("audio_mc must be shape (samples, channels)")
+    if frame.shape[1] < 1:
+        raise ValueError("audio_mc must include at least one channel")
+
+    _reset_processor_for_tests()
+    outputs: list[np.ndarray] = []
+    frame_samples = 160
+    total_samples = int(frame.shape[0])
+    for start in range(0, total_samples, frame_samples):
+        chunk = frame[start : start + frame_samples, :]
+        original_len = int(chunk.shape[0])
+        if original_len < frame_samples:
+            chunk = np.pad(chunk, ((0, frame_samples - original_len), (0, 0)))
+        pcm = np.clip(np.round(chunk * 32767.0), -32768.0, 32767.0).astype(np.int16)
+        out_bytes = process_audio_callback(
+            pcm.tobytes(),
+            channels=int(frame.shape[1]),
+            normalize_rms=bool(normalize_rms),
+        )
+        out = np.frombuffer(out_bytes, dtype=np.int16).astype(np.float32) / 32767.0
+        outputs.append(np.asarray(out[:original_len], dtype=np.float32))
+    if not outputs:
+        return np.zeros((0,), dtype=np.float32)
+    return np.concatenate(outputs, axis=0).astype(np.float32, copy=False)
+
+
 def _align_estimate_to_reference(
     reference: np.ndarray,
     estimate: np.ndarray,
@@ -299,12 +330,14 @@ def evaluate_mode(
     mode: str,
     suppression_enabled: bool,
     suppression_doa_deg: float | None,
-    processing_mode: str = "local",
+    processing_mode: str = "callback",
 ) -> dict[str, Any]:
     channel_map = active_channel_map_for_recording(speaker_recording)
     raw_mono = degraded_raw_mono_from_mix(mix_mc, channel_map=channel_map)
     if str(processing_mode) == "passthrough":
         processed = np.asarray(raw_mono, dtype=np.float32).copy()
+    elif str(processing_mode) == "callback":
+        processed = run_callback_pipeline(mix_mc, normalize_rms=False)
     elif str(processing_mode) == "local":
         processed = process_multichannel_audio(
             mix_mc,

@@ -136,6 +136,7 @@ def test_evaluate_mode_uses_local_pipeline_runner(monkeypatch, tmp_path: Path) -
         mode="own_voice_suppression",
         suppression_enabled=True,
         suppression_doa_deg=30.0,
+        processing_mode="local",
     )
 
     assert captured["sample_rate_hz"] == 16000
@@ -182,3 +183,44 @@ def test_evaluate_mode_passthrough_returns_raw_mono(tmp_path: Path) -> None:
     assert np.allclose(result["processed_audio"], expected_raw)
     assert abs(float(result["metrics"]["snr_delta"])) < 1e-6
     assert abs(float(result["metrics"]["sii_delta"])) < 1e-6
+
+
+def test_evaluate_mode_callback_uses_live_callback(monkeypatch, tmp_path: Path) -> None:
+    speaker_dir = _write_recording(tmp_path / "speakers", recording_id="speaker-004", distance_m=1.5, direction_deg=15.0, samples=400)
+    noise_dir = _write_recording(tmp_path / "noise", recording_id="noise-004", distance_m=None, direction_deg=0.0, samples=400)
+    speaker_recording = validation_common.load_recording(speaker_dir)
+    noise_recording = validation_common.load_recording(noise_dir)
+    speaker_mc, noise_mc = validation_common.align_recordings(speaker_recording, noise_recording)
+    channel_map = validation_common.active_channel_map_for_recording(speaker_recording)
+    mix_mc = validation_common.mix_speaker_and_noise(speaker_mc, noise_mc, channel_map=channel_map)
+    clean_ref_mono = validation_common.reference_mono_from_speaker(speaker_mc, channel_map=channel_map)
+
+    calls: list[tuple[int, int, bool]] = []
+
+    def fake_reset() -> None:
+        return None
+
+    def fake_callback(audio_bytes: bytes, channels: int, normalize_rms: bool = False) -> bytes:
+        calls.append((len(audio_bytes), channels, normalize_rms))
+        frame_samples = len(audio_bytes) // 2 // channels
+        out = np.full((frame_samples,), 1234, dtype=np.int16)
+        return out.tobytes()
+
+    monkeypatch.setattr(validation_common, "_reset_processor_for_tests", fake_reset)
+    monkeypatch.setattr(validation_common, "process_audio_callback", fake_callback)
+
+    result = validation_common.evaluate_mode(
+        mix_mc=mix_mc,
+        clean_ref_mono=clean_ref_mono,
+        speaker_recording=speaker_recording,
+        mode="amplification",
+        suppression_enabled=False,
+        suppression_doa_deg=None,
+        processing_mode="callback",
+    )
+
+    assert len(calls) == 3
+    assert all(channels == 6 for _, channels, _ in calls)
+    assert all(normalize_rms is False for _, _, normalize_rms in calls)
+    expected = np.full((mix_mc.shape[0],), 1234 / 32767.0, dtype=np.float32)
+    assert np.allclose(result["processed_audio"], expected)

@@ -56,9 +56,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--processing-mode",
-        choices=("local", "passthrough"),
-        default="local",
-        help="Validation processing path. Default: local.",
+        choices=("callback", "local", "passthrough"),
+        default="callback",
+        help="Validation processing path. Default: callback.",
     )
     parser.add_argument("--white-noise-seed", type=int, default=0, help="Base random seed for white-noise generation.")
     args = parser.parse_args()
