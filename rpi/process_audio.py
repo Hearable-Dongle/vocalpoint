@@ -4,14 +4,14 @@ import threading
 
 import numpy as np
 
-try:
-    from .beamform import DelayAndSumBeamformer
-    from .denoise import RNNoiseProcessor
-    from .localization import CaponLocalization
-except ImportError:  # pragma: no cover
-    from beamform import DelayAndSumBeamformer
-    from denoise import RNNoiseProcessor
-    from localization import CaponLocalization
+# try:
+#     from .beamform import DelayAndSumBeamformer
+#     from .denoise import RNNoiseProcessor
+#     from .localization import CaponLocalization
+# except ImportError:  # pragma: no cover
+#     from beamform import DelayAndSumBeamformer
+#     from denoise import RNNoiseProcessor
+#     from localization import CaponLocalization
 
 
 _RESPEAKER3000_PROFILE_NAME = "ReSpeaker3000"
