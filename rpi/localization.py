@@ -61,8 +61,7 @@ def _gcc_phat(
     y_fft = np.fft.rfft(y_arr, n=fft_size)
     cross_power = x_fft * np.conj(y_fft)
     freqs_hz = np.fft.rfftfreq(fft_size, d=1.0 / float(sample_rate_hz))
-    cross_power[freqs_hz > float(bandlimit_hz)] = 0.0
-    cross_power[freqs_hz < 200.0] = 0.0
+    cross_power[freqs_hz < 50.0] = 0.0
     cross_power /= np.maximum(np.abs(cross_power), 1e-8)
     corr = np.fft.irfft(cross_power, n=fft_size)
     corr = np.fft.fftshift(corr)
@@ -220,7 +219,7 @@ class CaponLocalization:
         fs: int = 16000,
         nfft: int = 512,
         overlap: float = 0.5,
-        freq_range: tuple[int, int] = (200, 3000),
+        freq_range: tuple[int, int] = (500, 3500),
         max_sources: int = 1,
         *,
         mic_positions_xyz: np.ndarray | None = None,
