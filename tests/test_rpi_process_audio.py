@@ -53,7 +53,7 @@ class _FakeDenoiser:
 
 @pytest.fixture(autouse=True)
 def _reset_pipeline(monkeypatch):
-    monkeypatch.setattr(process_audio, "CaponLocalizer", _FakeLocalizer)
+    monkeypatch.setattr(process_audio, "CaponLocalization", _FakeLocalizer)
     monkeypatch.setattr(process_audio, "DelayAndSumBeamformer", _FakeBeamformer)
     monkeypatch.setattr(process_audio, "RNNoiseProcessor", _FakeDenoiser)
     process_audio._reset_processor_for_tests()

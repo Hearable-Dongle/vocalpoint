@@ -7,11 +7,11 @@ import numpy as np
 try:
     from .beamform import DelayAndSumBeamformer
     from .denoise import RNNoiseProcessor
-    from .localization import CaponLocalizer
+    from .localization import CaponLocalization
 except ImportError:  # pragma: no cover
     from beamform import DelayAndSumBeamformer
     from denoise import RNNoiseProcessor
-    from localization import CaponLocalizer
+    from localization import CaponLocalization
 
 
 _RESPEAKER3000_PROFILE_NAME = "ReSpeaker3000"
@@ -80,6 +80,21 @@ def _decode_interleaved_channels(audio_bytes: bytes, channels: int) -> np.ndarra
     return audio_int16.reshape(samples_per_channel, channels)
 
 
+def get_mic_profile(profile_name: str) -> dict[str, object]:
+    if profile_name not in _MIC_PROFILES:
+        raise ValueError(f"unknown mic profile: {profile_name}")
+    profile = _MIC_PROFILES[profile_name]
+    return {
+        "name": str(profile_name),
+        "channel_map": tuple(int(idx) for idx in profile["channel_map"]),
+        "mic_geometry_xyz": np.asarray(profile["mic_geometry_xyz"], dtype=np.float64).copy(),
+    }
+
+
+def available_mic_profiles() -> tuple[str, ...]:
+    return tuple(str(name) for name in _MIC_PROFILES.keys())
+
+
 def _select_pipeline_channels(interleaved: np.ndarray) -> list[np.ndarray]:
     channel_count = int(interleaved.shape[1])
     required_channels = max(_TOTAL_INPUT_CHANNELS, max(_CHANNEL_MAP) + 1)
@@ -120,11 +135,25 @@ def _rms_normalize_to_input(
 
 
 class RealtimeProcessAudioPipeline:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        mic_profile_name: str = _ACTIVE_MIC_PROFILE_NAME,
+        own_voice_suppression_enabled: bool = _OWN_VOICE_SUPPRESSION_ENABLED,
+        own_voice_suppression_doa_deg: float | None = _OWN_VOICE_SUPPRESSION_DOA_DEG,
+    ) -> None:
+        profile = get_mic_profile(str(mic_profile_name))
+        self._mic_profile_name = str(profile["name"])
+        self._channel_map = tuple(int(idx) for idx in profile["channel_map"])
+        self._mic_geometry_xyz = np.asarray(profile["mic_geometry_xyz"], dtype=np.float64)
+        self._own_voice_suppression_enabled = bool(own_voice_suppression_enabled)
+        self._own_voice_suppression_doa_deg = (
+            None if own_voice_suppression_doa_deg is None else float(own_voice_suppression_doa_deg)
+        )
         self._history_samples = max(1, int(round(_INPUT_SAMPLE_RATE_HZ * (_LOCALIZATION_WINDOW_MS / 1000.0))))
-        self._history_mc = np.zeros((0, len(_CHANNEL_MAP)), dtype=np.float32)
-        self._localizer = CaponLocalizer(
-            mic_positions_xyz=_MIC_GEOMETRY_XYZ,
+        self._history_mc = np.zeros((0, len(self._channel_map)), dtype=np.float32)
+        self._localizer = CaponLocalization(
+            mic_positions_xyz=self._mic_geometry_xyz,
             sample_rate_hz=_INPUT_SAMPLE_RATE_HZ,
             nfft=512,
             overlap=0.5,
@@ -142,7 +171,7 @@ class RealtimeProcessAudioPipeline:
             local_refine_enabled=False,
         )
         self._beamformer = DelayAndSumBeamformer(
-            mic_geometry_xyz=_MIC_GEOMETRY_XYZ,
+            mic_geometry_xyz=self._mic_geometry_xyz,
             sample_rate_hz=_INPUT_SAMPLE_RATE_HZ,
             sound_speed_m_s=343.0,
             doa_ema_alpha=0.2,
@@ -188,24 +217,24 @@ class RealtimeProcessAudioPipeline:
     def process_frame(self, frame_mc: np.ndarray) -> np.ndarray:
         with self._lock:
             frame = np.asarray(frame_mc, dtype=np.float32)
-            if frame.ndim != 2 or frame.shape[1] != len(_CHANNEL_MAP):
-                raise ValueError("frame_mc must be shape (samples, 4)")
+            if frame.ndim != 2 or frame.shape[1] != len(self._channel_map):
+                raise ValueError(f"frame_mc must be shape (samples, {len(self._channel_map)})")
             passthrough = np.mean(frame, axis=1).astype(np.float32, copy=False)
             self._append_history(frame)
             if self._history_mc.shape[0] < self._history_samples:
                 return passthrough
 
             localization = self._localizer.process(self._history_mc)
-            if _OWN_VOICE_SUPPRESSION_ENABLED:
+            if self._own_voice_suppression_enabled:
                 beamformed = self._beamformer.suppress(
                     frame,
                     target_doa_deg=localization.doa_deg,
-                    interferer_doa_deg=_OWN_VOICE_SUPPRESSION_DOA_DEG,
+                    interferer_doa_deg=self._own_voice_suppression_doa_deg,
                 )
             else:
                 beamformed = self._beamformer.beamform(frame, doa_deg=localization.doa_deg)
             denoised = self._denoiser.process(beamformed.output)
-            if _OWN_VOICE_SUPPRESSION_ENABLED:
+            if self._own_voice_suppression_enabled:
                 return np.asarray(denoised.residual, dtype=np.float32)
             return np.asarray(denoised.denoised, dtype=np.float32)
 
@@ -241,3 +270,44 @@ def process_audio_callback(audio_bytes: bytes, channels: int, normalize_rms: boo
     if normalize_rms:
         mono_float32 = _rms_normalize_to_input(mono_float32, selected_channels)
     return _float32_mono_to_pcm16_bytes(mono_float32, expected_samples=interleaved.shape[0])
+
+
+def process_multichannel_audio(
+    audio_mc: np.ndarray,
+    *,
+    sample_rate_hz: int,
+    mic_profile_name: str = _ACTIVE_MIC_PROFILE_NAME,
+    own_voice_suppression_enabled: bool = _OWN_VOICE_SUPPRESSION_ENABLED,
+    own_voice_suppression_doa_deg: float | None = _OWN_VOICE_SUPPRESSION_DOA_DEG,
+) -> np.ndarray:
+    if int(sample_rate_hz) != _INPUT_SAMPLE_RATE_HZ:
+        raise ValueError(
+            f"process_multichannel_audio expects sample_rate_hz={_INPUT_SAMPLE_RATE_HZ}, got {sample_rate_hz}"
+        )
+    profile = get_mic_profile(str(mic_profile_name))
+    channel_map = tuple(int(idx) for idx in profile["channel_map"])
+    frame = np.asarray(audio_mc, dtype=np.float32)
+    if frame.ndim != 2:
+        raise ValueError("audio_mc must be shape (samples, channels)")
+    required_channels = max(_TOTAL_INPUT_CHANNELS, max(channel_map) + 1)
+    if frame.shape[1] < required_channels:
+        raise ValueError(f"audio_mc must have at least {required_channels} channels, got {frame.shape[1]}")
+    pipeline = RealtimeProcessAudioPipeline(
+        mic_profile_name=str(mic_profile_name),
+        own_voice_suppression_enabled=bool(own_voice_suppression_enabled),
+        own_voice_suppression_doa_deg=own_voice_suppression_doa_deg,
+    )
+    selected = np.asarray(frame[:, channel_map], dtype=np.float32)
+    outputs: list[np.ndarray] = []
+    frame_samples = int(_EXPECTED_FRAME_SAMPLES)
+    total_samples = int(selected.shape[0])
+    if total_samples == 0:
+        return np.zeros((0,), dtype=np.float32)
+    for start in range(0, total_samples, frame_samples):
+        chunk = selected[start : start + frame_samples, :]
+        original_len = int(chunk.shape[0])
+        if original_len < frame_samples:
+            chunk = np.pad(chunk, ((0, frame_samples - original_len), (0, 0)))
+        out = pipeline.process_frame(chunk)
+        outputs.append(np.asarray(out[:original_len], dtype=np.float32))
+    return np.concatenate(outputs, axis=0).astype(np.float32, copy=False)

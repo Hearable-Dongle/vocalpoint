@@ -4,10 +4,12 @@ import json
 import re
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 
 from validate import common as validation_common
+from rpi.localization import SRPPHATLocalizer
 
 SIGNAL_PROCESSING_RESEARCH_ROOT = Path(__file__).resolve().parents[1] / "signal-processing-research"
 if str(SIGNAL_PROCESSING_RESEARCH_ROOT) not in sys.path:
@@ -154,6 +156,57 @@ def test_evaluate_mode_uses_local_pipeline_runner(monkeypatch, tmp_path: Path) -
     assert result["mode"] == "own_voice_suppression"
     assert result["processed_audio"].shape[0] == mix_mc.shape[0]
     assert "sii_processed" in result["metrics"]
+
+
+def test_srp_localizer_estimates_broadside_direction() -> None:
+    side_length_m = 0.0457
+    mic_positions_xyz = np.asarray(
+        [
+            [-side_length_m / 2.0, -side_length_m / 2.0, 0.0],
+            [side_length_m / 2.0, side_length_m / 2.0, 0.0],
+            [-side_length_m / 2.0, side_length_m / 2.0, 0.0],
+            [side_length_m / 2.0, -side_length_m / 2.0, 0.0],
+        ],
+        dtype=np.float64,
+    )
+    sample_rate_hz = 16000
+    sample_count = 3200
+    time_sec = np.arange(sample_count, dtype=np.float64) / float(sample_rate_hz)
+    carrier = np.sin(2.0 * np.pi * 1000.0 * time_sec)
+    target_doa_deg = 45.0
+    direction = np.asarray(
+        [np.cos(np.deg2rad(target_doa_deg)), np.sin(np.deg2rad(target_doa_deg)), 0.0],
+        dtype=np.float64,
+    )
+    delays_sec = (mic_positions_xyz @ direction) / 343.0
+    delays_sec = delays_sec - np.mean(delays_sec)
+
+    audio = np.zeros((sample_count, mic_positions_xyz.shape[0]), dtype=np.float32)
+    for idx, delay_sec in enumerate(delays_sec.tolist()):
+        delayed_t = np.clip(time_sec - float(delay_sec), time_sec[0], time_sec[-1])
+        audio[:, idx] = np.interp(delayed_t, time_sec, carrier).astype(np.float32)
+
+    localizer = SRPPHATLocalizer(
+        mic_positions_xyz=mic_positions_xyz,
+        sample_rate_hz=sample_rate_hz,
+        grid_size=360,
+        hold_frames=0,
+        spectrum_ema_alpha=0.0,
+        peak_min_sharpness=0.0,
+        peak_min_margin=0.0,
+    )
+    result = localizer.process(audio)
+    assert result.doa_deg is not None
+    error = min(abs(float(result.doa_deg) - target_doa_deg), 360.0 - abs(float(result.doa_deg) - target_doa_deg))
+    assert error <= 10.0
+
+
+def test_srp_localizer_returns_none_for_empty_window() -> None:
+    mic_positions_xyz = np.zeros((4, 3), dtype=np.float64)
+    localizer = SRPPHATLocalizer(mic_positions_xyz=mic_positions_xyz, sample_rate_hz=16000)
+    result = localizer.process(np.zeros((0, 4), dtype=np.float32))
+    assert result.doa_deg is None
+    assert result.accepted is False
 
 
 def test_compute_metrics_aligns_delayed_estimates() -> None:
@@ -337,6 +390,74 @@ def test_evaluate_mode_research_adapter_uses_research_runner(monkeypatch, tmp_pa
     assert result["processing_mode"] == "research_adapter"
 
 
+def test_evaluate_mode_rnnoise_only_uses_rnnoise_runner(monkeypatch, tmp_path: Path) -> None:
+    speaker_dir = _write_recording(tmp_path / "speakers", recording_id="speaker-006b", distance_m=1.5, direction_deg=25.0)
+    noise_dir = _write_recording(tmp_path / "noise", recording_id="noise-006b", distance_m=None, direction_deg=0.0)
+    speaker_recording = validation_common.load_recording(speaker_dir)
+    noise_recording = validation_common.load_recording(noise_dir)
+    speaker_mc, noise_mc = validation_common.align_recordings(speaker_recording, noise_recording)
+    channel_map = validation_common.active_channel_map_for_recording(speaker_recording)
+    mix_mc = validation_common.mix_speaker_and_noise(speaker_mc, noise_mc, channel_map=channel_map)
+    clean_ref_mono = validation_common.reference_mono_from_speaker(speaker_mc, channel_map=channel_map)
+
+    captured = {}
+
+    def fake_rnnoise_runner(audio_mc, *, mic_profile_name):
+        captured["shape"] = tuple(audio_mc.shape)
+        captured["mic_profile_name"] = mic_profile_name
+        return np.mean(audio_mc[:, [1, 2, 3, 4]], axis=1).astype(np.float32)
+
+    monkeypatch.setattr(validation_common, "run_rnnoise_only_pipeline", fake_rnnoise_runner)
+
+    result = validation_common.evaluate_mode(
+        mix_mc=mix_mc,
+        clean_ref_mono=clean_ref_mono,
+        speaker_recording=speaker_recording,
+        mode="amplification",
+        suppression_enabled=False,
+        suppression_doa_deg=None,
+        processing_mode="rnnoise_only",
+    )
+
+    assert captured["shape"] == tuple(mix_mc.shape)
+    assert captured["mic_profile_name"] == "ReSpeaker3000"
+    assert result["processing_mode"] == "rnnoise_only"
+
+
+def test_evaluate_mode_rnnoise_single_channel_uses_single_channel_runner(monkeypatch, tmp_path: Path) -> None:
+    speaker_dir = _write_recording(tmp_path / "speakers", recording_id="speaker-006c", distance_m=1.5, direction_deg=25.0)
+    noise_dir = _write_recording(tmp_path / "noise", recording_id="noise-006c", distance_m=None, direction_deg=0.0)
+    speaker_recording = validation_common.load_recording(speaker_dir)
+    noise_recording = validation_common.load_recording(noise_dir)
+    speaker_mc, noise_mc = validation_common.align_recordings(speaker_recording, noise_recording)
+    channel_map = validation_common.active_channel_map_for_recording(speaker_recording)
+    mix_mc = validation_common.mix_speaker_and_noise(speaker_mc, noise_mc, channel_map=channel_map)
+    clean_ref_mono = validation_common.reference_mono_from_speaker(speaker_mc, channel_map=channel_map)
+
+    captured = {}
+
+    def fake_single_channel_runner(audio_mc, *, mic_profile_name):
+        captured["shape"] = tuple(audio_mc.shape)
+        captured["mic_profile_name"] = mic_profile_name
+        return np.asarray(audio_mc[:, 1], dtype=np.float32)
+
+    monkeypatch.setattr(validation_common, "run_rnnoise_single_channel_pipeline", fake_single_channel_runner)
+
+    result = validation_common.evaluate_mode(
+        mix_mc=mix_mc,
+        clean_ref_mono=clean_ref_mono,
+        speaker_recording=speaker_recording,
+        mode="amplification",
+        suppression_enabled=False,
+        suppression_doa_deg=None,
+        processing_mode="rnnoise_single_channel",
+    )
+
+    assert captured["shape"] == tuple(mix_mc.shape)
+    assert captured["mic_profile_name"] == "ReSpeaker3000"
+    assert result["processing_mode"] == "rnnoise_single_channel"
+
+
 def test_run_research_adapter_pipeline_uses_respeaker3000_active_channels_and_params(monkeypatch) -> None:
     calls = {}
 
@@ -387,3 +508,65 @@ def test_run_research_adapter_pipeline_uses_respeaker3000_active_channels_and_pa
     assert calls["init_kwargs"]["own_voice_suppression_doa_deg"] == 335.0
     assert np.asarray(calls["init_kwargs"]["mic_geometry_xyz"]).shape == (4, 3)
     assert calls["closed"] is True
+
+
+def test_run_rnnoise_only_pipeline_uses_active_channels_and_preserves_length(monkeypatch) -> None:
+    calls = {}
+
+    class FakeProcessor:
+        def __init__(self):
+            calls["chunks"] = []
+
+        def process(self, frame):
+            arr = np.asarray(frame, dtype=np.float32).reshape(-1)
+            calls["chunks"].append(arr.copy())
+            return SimpleNamespace(denoised=(arr * 0.5).astype(np.float32))
+
+    monkeypatch.setattr(validation_common, "_build_validation_rnnoise_processor", lambda: FakeProcessor())
+
+    audio_mc = np.zeros((400, 6), dtype=np.float32)
+    audio_mc[:, 1] = 0.1
+    audio_mc[:, 2] = 0.2
+    audio_mc[:, 3] = 0.3
+    audio_mc[:, 4] = 0.4
+    audio_mc[:, 0] = 0.9
+    audio_mc[:, 5] = -0.9
+
+    out = validation_common.run_rnnoise_only_pipeline(audio_mc, mic_profile_name="ReSpeaker3000")
+
+    assert out.shape == (400,)
+    assert len(calls["chunks"]) == 3
+    expected_mono = np.mean(audio_mc[:, [1, 2, 3, 4]], axis=1)
+    reconstructed = np.concatenate([chunk[: min(160, expected_mono.shape[0] - (idx * 160))] for idx, chunk in enumerate(calls["chunks"])])
+    assert np.allclose(reconstructed, expected_mono)
+
+
+def test_run_rnnoise_single_channel_pipeline_uses_first_active_channel(monkeypatch) -> None:
+    calls = {}
+
+    class FakeProcessor:
+        def __init__(self):
+            calls["chunks"] = []
+
+        def process(self, frame):
+            arr = np.asarray(frame, dtype=np.float32).reshape(-1)
+            calls["chunks"].append(arr.copy())
+            return SimpleNamespace(denoised=(arr * 0.5).astype(np.float32))
+
+    monkeypatch.setattr(validation_common, "_build_validation_rnnoise_processor", lambda: FakeProcessor())
+
+    audio_mc = np.zeros((400, 6), dtype=np.float32)
+    audio_mc[:, 1] = 0.1
+    audio_mc[:, 2] = 0.2
+    audio_mc[:, 3] = 0.3
+    audio_mc[:, 4] = 0.4
+    audio_mc[:, 0] = 0.9
+    audio_mc[:, 5] = -0.9
+
+    out = validation_common.run_rnnoise_single_channel_pipeline(audio_mc, mic_profile_name="ReSpeaker3000")
+
+    assert out.shape == (400,)
+    assert len(calls["chunks"]) == 3
+    expected = np.asarray(audio_mc[:, 1], dtype=np.float32)
+    reconstructed = np.concatenate([chunk[: min(160, expected.shape[0] - (idx * 160))] for idx, chunk in enumerate(calls["chunks"])])
+    assert np.allclose(reconstructed, expected)
