@@ -362,9 +362,9 @@ def run_research_adapter_pipeline(
     return np.concatenate(outputs, axis=0).astype(np.float32, copy=False)
 
 
-def _build_validation_rnnoise_processor() -> RNNoiseProcessor:
+def _build_validation_rnnoise_processor(*, sample_rate_hz: int) -> RNNoiseProcessor:
     return RNNoiseProcessor(
-        sample_rate_hz=_INPUT_SAMPLE_RATE_HZ,
+        sample_rate_hz=int(sample_rate_hz),
         frame_ms=10,
         wet_mix=0.9,
         input_gain_db=0.0,
@@ -404,20 +404,8 @@ def run_rnnoise_only_pipeline(audio_mc: np.ndarray, *, mic_profile_name: str) ->
     profile = get_mic_profile(str(mic_profile_name))
     channel_map = tuple(int(idx) for idx in profile["channel_map"])
     mono_in = np.mean(_select_active_channels(frame, channel_map), axis=1).astype(np.float32, copy=False)
-    processor = _build_validation_rnnoise_processor()
-    outputs: list[np.ndarray] = []
-    frame_samples = 160
-    total_samples = int(mono_in.shape[0])
-    for start in range(0, total_samples, frame_samples):
-        chunk = mono_in[start : start + frame_samples]
-        original_len = int(chunk.shape[0])
-        if original_len < frame_samples:
-            chunk = np.pad(chunk, (0, frame_samples - original_len))
-        result = processor.process(np.asarray(chunk, dtype=np.float32))
-        outputs.append(np.asarray(result.denoised[:original_len], dtype=np.float32))
-    if not outputs:
-        return np.zeros((0,), dtype=np.float32)
-    return np.concatenate(outputs, axis=0).astype(np.float32, copy=False)
+    processor = _build_validation_rnnoise_processor(sample_rate_hz=_INPUT_SAMPLE_RATE_HZ)
+    return np.asarray(processor.process_stream(mono_in).denoised, dtype=np.float32)
 
 
 def run_rnnoise_single_channel_pipeline(audio_mc: np.ndarray, *, mic_profile_name: str) -> np.ndarray:
@@ -429,38 +417,14 @@ def run_rnnoise_single_channel_pipeline(audio_mc: np.ndarray, *, mic_profile_nam
     if not channel_map:
         raise ValueError("mic profile channel map must not be empty")
     mono_in = np.asarray(frame[:, int(channel_map[0])], dtype=np.float32).reshape(-1)
-    processor = _build_validation_rnnoise_processor()
-    outputs: list[np.ndarray] = []
-    frame_samples = 160
-    total_samples = int(mono_in.shape[0])
-    for start in range(0, total_samples, frame_samples):
-        chunk = mono_in[start : start + frame_samples]
-        original_len = int(chunk.shape[0])
-        if original_len < frame_samples:
-            chunk = np.pad(chunk, (0, frame_samples - original_len))
-        result = processor.process(np.asarray(chunk, dtype=np.float32))
-        outputs.append(np.asarray(result.denoised[:original_len], dtype=np.float32))
-    if not outputs:
-        return np.zeros((0,), dtype=np.float32)
-    return np.concatenate(outputs, axis=0).astype(np.float32, copy=False)
+    processor = _build_validation_rnnoise_processor(sample_rate_hz=_INPUT_SAMPLE_RATE_HZ)
+    return np.asarray(processor.process_stream(mono_in).denoised, dtype=np.float32)
 
 
-def run_rnnoise_mono_audio(audio_mono: np.ndarray) -> np.ndarray:
+def run_rnnoise_mono_audio(audio_mono: np.ndarray, *, sample_rate_hz: int) -> np.ndarray:
     mono_in = np.asarray(audio_mono, dtype=np.float32).reshape(-1)
-    processor = _build_validation_rnnoise_processor()
-    outputs: list[np.ndarray] = []
-    frame_samples = 160
-    total_samples = int(mono_in.shape[0])
-    for start in range(0, total_samples, frame_samples):
-        chunk = mono_in[start : start + frame_samples]
-        original_len = int(chunk.shape[0])
-        if original_len < frame_samples:
-            chunk = np.pad(chunk, (0, frame_samples - original_len))
-        result = processor.process(np.asarray(chunk, dtype=np.float32))
-        outputs.append(np.asarray(result.denoised[:original_len], dtype=np.float32))
-    if not outputs:
-        return np.zeros((0,), dtype=np.float32)
-    return np.concatenate(outputs, axis=0).astype(np.float32, copy=False)
+    processor = RNNoiseProcessor(sample_rate_hz=int(sample_rate_hz))
+    return np.asarray(processor.process_stream(mono_in).denoised, dtype=np.float32)
 
 
 _ROOT_AUDIO_CALLBACK = None
