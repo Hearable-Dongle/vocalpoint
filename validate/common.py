@@ -3,8 +3,12 @@ from __future__ import annotations
 import json
 import importlib.util
 import sys
+import threading
+import time
 import types
+import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,12 +19,6 @@ from scipy.signal import resample_poly
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SIGNAL_PROCESSING_RESEARCH_ROOT = REPO_ROOT / "signal-processing-research"
-if str(SIGNAL_PROCESSING_RESEARCH_ROOT) not in sys.path:
-    sys.path.insert(0, str(SIGNAL_PROCESSING_RESEARCH_ROOT))
-
-from beamforming.util.compare import calc_snr  # noqa: E402
-from verification.sii_utils import compute_sii  # noqa: E402
 from rpi.process_audio import (  # noqa: E402
     _INPUT_SAMPLE_RATE_HZ,
     _RESPEAKER3000_PROFILE_NAME,
@@ -36,6 +34,32 @@ VALIDATE_ROOT = Path(__file__).resolve().parent
 OUTPUT_ROOT = VALIDATE_ROOT / "outputs"
 AMPLIFICATION_OUTPUT_ROOT = OUTPUT_ROOT / "amplification"
 SUPPRESSION_OUTPUT_ROOT = OUTPUT_ROOT / "own_voice_suppression"
+SPEAKER_OUTPUT_ROOT = OUTPUT_ROOT / "speakers"
+NOISE_OUTPUT_ROOT = OUTPUT_ROOT / "noise"
+
+
+@dataclass(frozen=True, slots=True)
+class MicProfile:
+    name: str
+    sample_rate_hz: int
+    channel_count: int
+    active_channel_map: tuple[int, ...]
+    channel_doa_deg: dict[int, float]
+    side_length_m: float
+
+
+RESPEAKER3000_PROFILE = MicProfile(
+    name="ReSpeaker3000",
+    sample_rate_hz=16000,
+    channel_count=6,
+    active_channel_map=(1, 2, 3, 4),
+    channel_doa_deg={1: 225.0, 2: 45.0, 3: 135.0, 4: 315.0},
+    side_length_m=0.0457,
+)
+
+DEFAULT_MIC_PROFILE = RESPEAKER3000_PROFILE
+DEFAULT_DURATION_SEC = 8.0
+DEFAULT_DOA_DEG = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +70,305 @@ class RecordingData:
     mic_array_profile: str
     channels: tuple[np.ndarray, ...]
     metadata: dict[str, Any]
+
+
+def now_iso() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _slugify_token(value: str) -> str:
+    slug_chars: list[str] = []
+    for char in value.strip().lower():
+        if char.isalnum():
+            slug_chars.append(char)
+        else:
+            slug_chars.append("-")
+    slug = "".join(slug_chars).strip("-")
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return slug or "capture"
+
+
+def _format_decimal_token(value: float) -> str:
+    token = f"{float(value):g}"
+    return token.replace("-", "neg").replace(".", "p")
+
+
+def _short_capture_suffix() -> str:
+    return uuid.uuid4().hex[:8]
+
+
+def default_speaker_output_path(
+    *,
+    speaker_id: str,
+    distance_m: float,
+    doa_deg: float,
+    mic_profile: MicProfile = DEFAULT_MIC_PROFILE,
+) -> str:
+    speaker_token = _slugify_token(speaker_id)
+    distance_token = _format_decimal_token(distance_m)
+    doa_token = _format_decimal_token(doa_deg)
+    return f"{mic_profile.name}/{speaker_token}_d{distance_token}m_doa{doa_token}deg_{_short_capture_suffix()}"
+
+
+def default_noise_output_path(
+    *,
+    identifier: str,
+    mic_profile: MicProfile = DEFAULT_MIC_PROFILE,
+) -> str:
+    return f"{mic_profile.name}/{_slugify_token(identifier)}_{_short_capture_suffix()}"
+
+
+def sanitize_relative_output_path(relative_output_path: str) -> Path:
+    rel = Path(relative_output_path)
+    if rel.is_absolute():
+        raise ValueError("output path must be relative")
+    if ".." in rel.parts:
+        raise ValueError("output path must not escape the outputs directory")
+    return rel
+
+
+def resolve_capture_output_dir(*, kind: str, relative_output_path: str) -> Path:
+    rel = sanitize_relative_output_path(relative_output_path)
+    base = SPEAKER_OUTPUT_ROOT if kind == "speaker" else NOISE_OUTPUT_ROOT
+    out_dir = (base / rel).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "raw").mkdir(parents=True, exist_ok=True)
+    return out_dir
+
+
+def select_input_device(
+    *,
+    device_query: str | None,
+    required_input_channels: int,
+) -> tuple[int | None, str]:
+    try:
+        import sounddevice as sd  # type: ignore
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("sounddevice/PortAudio is unavailable for live capture") from exc
+    devices = sd.query_devices()
+    if device_query:
+        query = device_query.strip().lower()
+        for idx, device in enumerate(devices):
+            name = str(device.get("name", ""))
+            max_input_channels = int(device.get("max_input_channels", 0))
+            if max_input_channels >= required_input_channels and query in name.lower():
+                return idx, name
+        raise ValueError(
+            f"no input device matching query {device_query!r} with at least {required_input_channels} channels"
+        )
+    default = sd.default.device
+    if isinstance(default, (list, tuple)) and len(default) >= 1 and default[0] is not None and int(default[0]) >= 0:
+        idx = int(default[0])
+        device = devices[idx]
+        if int(device.get("max_input_channels", 0)) >= required_input_channels:
+            return idx, str(device.get("name", f"device-{idx}"))
+    for idx, device in enumerate(devices):
+        if int(device.get("max_input_channels", 0)) >= required_input_channels:
+            return idx, str(device.get("name", f"device-{idx}"))
+    raise ValueError(f"no input device found with at least {required_input_channels} channels")
+
+
+def _launch_keyboard_stop_thread(stop_event: threading.Event) -> threading.Thread:
+    def wait_for_enter() -> None:
+        try:
+            input("Press Enter to stop early...\n")
+        except EOFError:
+            return
+        stop_event.set()
+
+    thread = threading.Thread(target=wait_for_enter, daemon=True)
+    thread.start()
+    return thread
+
+
+def record_multichannel_audio(
+    *,
+    duration_sec: float,
+    sample_rate_hz: int,
+    channel_count: int,
+    device_query: str | None = None,
+    allow_keyboard_stop: bool = True,
+    blocksize: int = 0,
+) -> tuple[np.ndarray, str]:
+    try:
+        import sounddevice as sd  # type: ignore
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("sounddevice/PortAudio is unavailable for live capture") from exc
+    device_idx, device_name = select_input_device(
+        device_query=device_query,
+        required_input_channels=int(channel_count),
+    )
+    captured_blocks: list[np.ndarray] = []
+    stop_event = threading.Event()
+    keyboard_thread = _launch_keyboard_stop_thread(stop_event) if allow_keyboard_stop else None
+
+    def callback(indata: np.ndarray, frames: int, time_info: Any, status: sd.CallbackFlags) -> None:
+        del frames, time_info
+        if status:
+            pass
+        captured_blocks.append(np.asarray(indata, dtype=np.int16).copy())
+        if stop_event.is_set():
+            raise sd.CallbackStop
+
+    start = time.monotonic()
+    try:
+        with sd.InputStream(
+            device=device_idx,
+            samplerate=int(sample_rate_hz),
+            channels=int(channel_count),
+            dtype="int16",
+            blocksize=int(blocksize),
+            callback=callback,
+        ):
+            while (time.monotonic() - start) < float(duration_sec) and not stop_event.is_set():
+                time.sleep(0.05)
+            stop_event.set()
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        stop_event.set()
+    finally:
+        if keyboard_thread is not None:
+            keyboard_thread.join(timeout=0.1)
+
+    if not captured_blocks:
+        raise RuntimeError("no audio captured from input device")
+    return np.concatenate(captured_blocks, axis=0).astype(np.int16, copy=False), str(device_name)
+
+
+def save_raw_channels(audio_mc: np.ndarray, *, sample_rate_hz: int, output_dir: Path) -> list[dict[str, Any]]:
+    raw_dir = output_dir / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    audio = np.asarray(audio_mc)
+    if audio.ndim != 2:
+        raise ValueError("audio_mc must be shape (samples, channels)")
+    channels: list[dict[str, Any]] = []
+    for channel_index in range(int(audio.shape[1])):
+        filename = f"channel_{channel_index:03d}.wav"
+        wavfile.write(raw_dir / filename, int(sample_rate_hz), np.asarray(audio[:, channel_index], dtype=np.int16))
+        channels.append({"channelIndex": int(channel_index), "filename": filename})
+    return channels
+
+
+def write_metadata(output_dir: Path, metadata: dict[str, Any]) -> None:
+    (output_dir / "metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def speaker_capture_metadata(
+    *,
+    recording_id: str,
+    device_name: str,
+    mic_profile: MicProfile,
+    sample_rate_hz: int,
+    started_at_iso: str,
+    stopped_at_iso: str,
+    channels: list[dict[str, Any]],
+    speaker_id: str,
+    distance_m: float,
+    doa_deg: float,
+    duration_sec: float,
+) -> dict[str, Any]:
+    return {
+        "recordingId": str(recording_id),
+        "sessionId": str(recording_id),
+        "startedAtIso": str(started_at_iso),
+        "stoppedAtIso": str(stopped_at_iso),
+        "status": "ready",
+        "deviceName": str(device_name),
+        "micArrayProfile": str(mic_profile.name),
+        "notes": "",
+        "speakers": [
+            {
+                "speakerName": str(speaker_id),
+                "speakingPeriods": [
+                    {
+                        "startSec": 0.0,
+                        "endSec": float(duration_sec),
+                        "directionDeg": float(doa_deg),
+                    }
+                ],
+            }
+        ],
+        "artifacts": {
+            "sampleRateHz": int(sample_rate_hz),
+            "channels": channels,
+        },
+        "validation": {
+            "captureType": "speaker",
+            "speakerId": str(speaker_id),
+            "distanceM": float(distance_m),
+            "durationSec": float(duration_sec),
+            "micProfile": {
+                "name": str(mic_profile.name),
+                "sampleRateHz": int(mic_profile.sample_rate_hz),
+                "channelCount": int(mic_profile.channel_count),
+                "activeChannelMap": [int(idx) for idx in mic_profile.active_channel_map],
+                "channelDoaDeg": {str(k): float(v) for k, v in mic_profile.channel_doa_deg.items()},
+                "sideLengthM": float(mic_profile.side_length_m),
+            },
+        },
+    }
+
+
+def noise_capture_metadata(
+    *,
+    recording_id: str,
+    device_name: str,
+    mic_profile: MicProfile,
+    sample_rate_hz: int,
+    started_at_iso: str,
+    stopped_at_iso: str,
+    channels: list[dict[str, Any]],
+    identifier: str,
+    duration_sec: float,
+) -> dict[str, Any]:
+    return {
+        "recordingId": str(recording_id),
+        "sessionId": str(recording_id),
+        "startedAtIso": str(started_at_iso),
+        "stoppedAtIso": str(stopped_at_iso),
+        "status": "ready",
+        "deviceName": str(device_name),
+        "micArrayProfile": str(mic_profile.name),
+        "notes": "",
+        "speakers": [],
+        "artifacts": {
+            "sampleRateHz": int(sample_rate_hz),
+            "channels": channels,
+        },
+        "validation": {
+            "captureType": "noise",
+            "noiseOnly": True,
+            "identifier": str(identifier),
+            "durationSec": float(duration_sec),
+            "micProfile": {
+                "name": str(mic_profile.name),
+                "sampleRateHz": int(mic_profile.sample_rate_hz),
+                "channelCount": int(mic_profile.channel_count),
+                "activeChannelMap": [int(idx) for idx in mic_profile.active_channel_map],
+                "channelDoaDeg": {str(k): float(v) for k, v in mic_profile.channel_doa_deg.items()},
+                "sideLengthM": float(mic_profile.side_length_m),
+            },
+        },
+    }
+
+
+def _load_calc_snr():
+    signal_processing_research_root = REPO_ROOT / "signal-processing-research"
+    if str(signal_processing_research_root) not in sys.path:
+        sys.path.insert(0, str(signal_processing_research_root))
+    from beamforming.util.compare import calc_snr  # type: ignore
+
+    return calc_snr
+
+
+def _load_compute_sii():
+    signal_processing_research_root = REPO_ROOT / "signal-processing-research"
+    if str(signal_processing_research_root) not in sys.path:
+        sys.path.insert(0, str(signal_processing_research_root))
+    from verification.sii_utils import compute_sii  # type: ignore
+
+    return compute_sii
 
 
 def generate_white_noise_like(
@@ -362,7 +685,7 @@ def run_research_adapter_pipeline(
     return np.concatenate(outputs, axis=0).astype(np.float32, copy=False)
 
 
-def _build_validation_rnnoise_processor(*, sample_rate_hz: int) -> RNNoiseProcessor:
+def _build_validation_rnnoise_processor(*, sample_rate_hz: int = _INPUT_SAMPLE_RATE_HZ) -> RNNoiseProcessor:
     return RNNoiseProcessor(
         sample_rate_hz=int(sample_rate_hz),
         frame_ms=10,
@@ -397,6 +720,26 @@ def _build_validation_rnnoise_processor(*, sample_rate_hz: int) -> RNNoiseProces
     )
 
 
+def _run_processor_mono_audio(processor: object, audio_mono: np.ndarray) -> np.ndarray:
+    mono_in = np.asarray(audio_mono, dtype=np.float32).reshape(-1)
+    if hasattr(processor, "process_stream"):
+        result = getattr(processor, "process_stream")(mono_in)
+        return np.asarray(result.denoised, dtype=np.float32)
+
+    outputs: list[np.ndarray] = []
+    frame_samples = int(getattr(processor, "_frame_size", 160))
+    for start in range(0, int(mono_in.shape[0]), frame_samples):
+        chunk = mono_in[start : start + frame_samples]
+        original_len = int(chunk.shape[0])
+        if original_len < frame_samples:
+            chunk = np.pad(chunk, (0, frame_samples - original_len))
+        result = getattr(processor, "process")(np.asarray(chunk, dtype=np.float32))
+        outputs.append(np.asarray(result.denoised[:original_len], dtype=np.float32))
+    if not outputs:
+        return np.zeros((0,), dtype=np.float32)
+    return np.concatenate(outputs, axis=0).astype(np.float32, copy=False)
+
+
 def run_rnnoise_only_pipeline(audio_mc: np.ndarray, *, mic_profile_name: str) -> np.ndarray:
     frame = np.asarray(audio_mc, dtype=np.float32)
     if frame.ndim != 2:
@@ -404,8 +747,8 @@ def run_rnnoise_only_pipeline(audio_mc: np.ndarray, *, mic_profile_name: str) ->
     profile = get_mic_profile(str(mic_profile_name))
     channel_map = tuple(int(idx) for idx in profile["channel_map"])
     mono_in = np.mean(_select_active_channels(frame, channel_map), axis=1).astype(np.float32, copy=False)
-    processor = _build_validation_rnnoise_processor(sample_rate_hz=_INPUT_SAMPLE_RATE_HZ)
-    return np.asarray(processor.process_stream(mono_in).denoised, dtype=np.float32)
+    processor = _build_validation_rnnoise_processor()
+    return _run_processor_mono_audio(processor, mono_in)
 
 
 def run_rnnoise_single_channel_pipeline(audio_mc: np.ndarray, *, mic_profile_name: str) -> np.ndarray:
@@ -417,14 +760,14 @@ def run_rnnoise_single_channel_pipeline(audio_mc: np.ndarray, *, mic_profile_nam
     if not channel_map:
         raise ValueError("mic profile channel map must not be empty")
     mono_in = np.asarray(frame[:, int(channel_map[0])], dtype=np.float32).reshape(-1)
-    processor = _build_validation_rnnoise_processor(sample_rate_hz=_INPUT_SAMPLE_RATE_HZ)
-    return np.asarray(processor.process_stream(mono_in).denoised, dtype=np.float32)
+    processor = _build_validation_rnnoise_processor()
+    return _run_processor_mono_audio(processor, mono_in)
 
 
 def run_rnnoise_mono_audio(audio_mono: np.ndarray, *, sample_rate_hz: int) -> np.ndarray:
     mono_in = np.asarray(audio_mono, dtype=np.float32).reshape(-1)
     processor = RNNoiseProcessor(sample_rate_hz=int(sample_rate_hz))
-    return np.asarray(processor.process_stream(mono_in).denoised, dtype=np.float32)
+    return _run_processor_mono_audio(processor, mono_in)
 
 
 _ROOT_AUDIO_CALLBACK = None

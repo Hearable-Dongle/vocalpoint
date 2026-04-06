@@ -6,7 +6,7 @@ from pathlib import Path
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from validation.common import (
+    from validate.common import (
         DEFAULT_DOA_DEG,
         DEFAULT_DURATION_SEC,
         DEFAULT_MIC_PROFILE,
@@ -19,7 +19,7 @@ if __package__ in {None, ""}:
         write_metadata,
     )
 else:  # pragma: no cover
-    from validation.common import (
+    from validate.common import (
         DEFAULT_DOA_DEG,
         DEFAULT_DURATION_SEC,
         DEFAULT_MIC_PROFILE,
@@ -38,7 +38,7 @@ def main() -> None:
     parser.add_argument(
         "--output-path",
         default=None,
-        help="Output path relative to signal-processing-research/validation/outputs/speakers/. Default: auto-generated from speaker id, distance, and DOA.",
+        help="Output path relative to validate/outputs/speakers/. Default: auto-generated from speaker id, distance, and DOA.",
     )
     parser.add_argument("--speaker-id", required=True, help="Speaker identifier.")
     parser.add_argument("--distance-m", type=float, required=True, help="Distance from microphone in metres.")

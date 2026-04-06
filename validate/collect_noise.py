@@ -6,7 +6,7 @@ from pathlib import Path
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from validation.common import (
+    from validate.common import (
         DEFAULT_DURATION_SEC,
         DEFAULT_MIC_PROFILE,
         default_noise_output_path,
@@ -18,7 +18,7 @@ if __package__ in {None, ""}:
         write_metadata,
     )
 else:  # pragma: no cover
-    from validation.common import (
+    from validate.common import (
         DEFAULT_DURATION_SEC,
         DEFAULT_MIC_PROFILE,
         default_noise_output_path,
@@ -36,7 +36,7 @@ def main() -> None:
     parser.add_argument(
         "--output-path",
         default=None,
-        help="Output path relative to signal-processing-research/validation/outputs/noise/. Default: auto-generated from identifier.",
+        help="Output path relative to validate/outputs/noise/. Default: auto-generated from identifier.",
     )
     parser.add_argument("--identifier", required=True, help="Noise recording identifier.")
     parser.add_argument("--duration-sec", type=float, default=DEFAULT_DURATION_SEC, help="Capture duration in seconds. Default: 8.")
