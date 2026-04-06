@@ -29,6 +29,7 @@ from rpi.process_audio import (  # noqa: E402
     process_audio_callback,
     process_multichannel_audio,
 )
+from rpi.denoise import RNNoiseProcessor  # noqa: E402
 
 
 VALIDATE_ROOT = Path(__file__).resolve().parent
@@ -361,6 +362,107 @@ def run_research_adapter_pipeline(
     return np.concatenate(outputs, axis=0).astype(np.float32, copy=False)
 
 
+def _build_validation_rnnoise_processor() -> RNNoiseProcessor:
+    return RNNoiseProcessor(
+        sample_rate_hz=_INPUT_SAMPLE_RATE_HZ,
+        frame_ms=10,
+        wet_mix=0.9,
+        input_gain_db=0.0,
+        input_highpass_enabled=True,
+        input_highpass_cutoff_hz=80.0,
+        output_highpass_enabled=True,
+        output_highpass_cutoff_hz=80.0,
+        output_lowpass_cutoff_hz=0.0,
+        output_notch_freq_hz=0.0,
+        output_notch_q=0.0,
+        vad_adaptive_blend_enabled=True,
+        vad_blend_gamma=0.5,
+        vad_min_speech_preserve=0.15,
+        vad_max_speech_preserve=0.95,
+        startup_warmup_enabled=False,
+        startup_warmup_frames=10,
+        chunk_crossfade_enabled=False,
+        chunk_crossfade_samples=16,
+        declick_enabled=False,
+        declick_alpha=0.92,
+        declick_conditional=True,
+        declick_spike_threshold=0.03,
+        output_clip_guard_enabled=False,
+        output_clip_guard_abs_max=0.95,
+        corruption_guard_enabled=False,
+        corruption_guard_rms_ratio_threshold=2.0,
+        corruption_guard_peak_ratio_threshold=3.0,
+        corruption_guard_mode="hold_previous",
+        voice_eq_enabled=False,
+    )
+
+
+def run_rnnoise_only_pipeline(audio_mc: np.ndarray, *, mic_profile_name: str) -> np.ndarray:
+    frame = np.asarray(audio_mc, dtype=np.float32)
+    if frame.ndim != 2:
+        raise ValueError("audio_mc must be shape (samples, channels)")
+    profile = get_mic_profile(str(mic_profile_name))
+    channel_map = tuple(int(idx) for idx in profile["channel_map"])
+    mono_in = np.mean(_select_active_channels(frame, channel_map), axis=1).astype(np.float32, copy=False)
+    processor = _build_validation_rnnoise_processor()
+    outputs: list[np.ndarray] = []
+    frame_samples = 160
+    total_samples = int(mono_in.shape[0])
+    for start in range(0, total_samples, frame_samples):
+        chunk = mono_in[start : start + frame_samples]
+        original_len = int(chunk.shape[0])
+        if original_len < frame_samples:
+            chunk = np.pad(chunk, (0, frame_samples - original_len))
+        result = processor.process(np.asarray(chunk, dtype=np.float32))
+        outputs.append(np.asarray(result.denoised[:original_len], dtype=np.float32))
+    if not outputs:
+        return np.zeros((0,), dtype=np.float32)
+    return np.concatenate(outputs, axis=0).astype(np.float32, copy=False)
+
+
+def run_rnnoise_single_channel_pipeline(audio_mc: np.ndarray, *, mic_profile_name: str) -> np.ndarray:
+    frame = np.asarray(audio_mc, dtype=np.float32)
+    if frame.ndim != 2:
+        raise ValueError("audio_mc must be shape (samples, channels)")
+    profile = get_mic_profile(str(mic_profile_name))
+    channel_map = tuple(int(idx) for idx in profile["channel_map"])
+    if not channel_map:
+        raise ValueError("mic profile channel map must not be empty")
+    mono_in = np.asarray(frame[:, int(channel_map[0])], dtype=np.float32).reshape(-1)
+    processor = _build_validation_rnnoise_processor()
+    outputs: list[np.ndarray] = []
+    frame_samples = 160
+    total_samples = int(mono_in.shape[0])
+    for start in range(0, total_samples, frame_samples):
+        chunk = mono_in[start : start + frame_samples]
+        original_len = int(chunk.shape[0])
+        if original_len < frame_samples:
+            chunk = np.pad(chunk, (0, frame_samples - original_len))
+        result = processor.process(np.asarray(chunk, dtype=np.float32))
+        outputs.append(np.asarray(result.denoised[:original_len], dtype=np.float32))
+    if not outputs:
+        return np.zeros((0,), dtype=np.float32)
+    return np.concatenate(outputs, axis=0).astype(np.float32, copy=False)
+
+
+def run_rnnoise_mono_audio(audio_mono: np.ndarray) -> np.ndarray:
+    mono_in = np.asarray(audio_mono, dtype=np.float32).reshape(-1)
+    processor = _build_validation_rnnoise_processor()
+    outputs: list[np.ndarray] = []
+    frame_samples = 160
+    total_samples = int(mono_in.shape[0])
+    for start in range(0, total_samples, frame_samples):
+        chunk = mono_in[start : start + frame_samples]
+        original_len = int(chunk.shape[0])
+        if original_len < frame_samples:
+            chunk = np.pad(chunk, (0, frame_samples - original_len))
+        result = processor.process(np.asarray(chunk, dtype=np.float32))
+        outputs.append(np.asarray(result.denoised[:original_len], dtype=np.float32))
+    if not outputs:
+        return np.zeros((0,), dtype=np.float32)
+    return np.concatenate(outputs, axis=0).astype(np.float32, copy=False)
+
+
 _ROOT_AUDIO_CALLBACK = None
 
 
@@ -510,6 +612,16 @@ def evaluate_mode(
             mic_profile_name=str(speaker_recording.mic_array_profile),
             own_voice_suppression_enabled=bool(suppression_enabled),
             own_voice_suppression_doa_deg=suppression_doa_deg,
+        )
+    elif str(processing_mode) == "rnnoise_only":
+        processed = run_rnnoise_only_pipeline(
+            mix_mc,
+            mic_profile_name=str(speaker_recording.mic_array_profile),
+        )
+    elif str(processing_mode) == "rnnoise_single_channel":
+        processed = run_rnnoise_single_channel_pipeline(
+            mix_mc,
+            mic_profile_name=str(speaker_recording.mic_array_profile),
         )
     elif str(processing_mode) == "entrypoint":
         processed = run_root_entrypoint_pipeline(mix_mc)

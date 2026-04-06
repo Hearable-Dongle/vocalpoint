@@ -1,0 +1,13 @@
+{
+  "clean_ref": "/home/mkeller/mkeller/vocalpoint/validate/outputs/amplification/matthew_d0p5m_doa0deg/speaker_reference_mono.wav",
+  "noisy_input": "/home/mkeller/mkeller/vocalpoint/validate/outputs/amplification/matthew_d0p5m_doa0deg/mixture_raw_mono.wav",
+  "processed_lag_samples": 1591,
+  "raw_lag_samples": 0,
+  "sample_rate_hz": 16000,
+  "sii_delta": -0.3243770193366466,
+  "sii_processed": 0.00223572159195817,
+  "sii_raw": 0.32661274092860476,
+  "snr_delta": -16.246683153454974,
+  "snr_processed": -16.85014978503733,
+  "snr_raw": -0.6034666315823588
+}

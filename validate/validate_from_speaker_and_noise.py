@@ -50,7 +50,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--processing-mode",
-        choices=("callback", "entrypoint", "local", "passthrough", "research_adapter"),
+        choices=("callback", "entrypoint", "local", "passthrough", "research_adapter", "rnnoise_only", "rnnoise_single_channel"),
         default="callback",
         help="Validation processing path. Default: callback.",
     )
