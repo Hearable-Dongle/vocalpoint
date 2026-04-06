@@ -49,6 +49,14 @@ def test_mix_speaker_and_noise_rms_matches_then_averages() -> None:
     assert np.allclose(mixed, expected, atol=1e-6)
 
 
+def test_mix_speaker_and_noise_noise_scale_applies_after_rms_match() -> None:
+    speaker = np.ones((160, 6), dtype=np.float32) * 0.2
+    noise = np.ones((160, 6), dtype=np.float32) * 0.05
+    mixed = validation_common.mix_speaker_and_noise(speaker, noise, channel_map=(1, 2, 3, 4), noise_scale=2.0)
+    expected = np.ones((160, 6), dtype=np.float32) * 0.3
+    assert np.allclose(mixed, expected, atol=1e-6)
+
+
 def test_aggregate_results_by_distance_computes_stats() -> None:
     rows = [
         {"distance_m": 1.0, "sii_processed": 0.4, "snr_processed": 1.0},
@@ -183,6 +191,34 @@ def test_evaluate_mode_passthrough_returns_raw_mono(tmp_path: Path) -> None:
     assert np.allclose(result["processed_audio"], expected_raw)
     assert abs(float(result["metrics"]["snr_delta"])) < 1e-6
     assert abs(float(result["metrics"]["sii_delta"])) < 1e-6
+
+
+def test_evaluate_mode_can_rms_match_processed_output_to_input(tmp_path: Path) -> None:
+    speaker_dir = _write_recording(tmp_path / "speakers", recording_id="speaker-003b", distance_m=1.5, direction_deg=15.0)
+    noise_dir = _write_recording(tmp_path / "noise", recording_id="noise-003b", distance_m=None, direction_deg=0.0)
+    speaker_recording = validation_common.load_recording(speaker_dir)
+    noise_recording = validation_common.load_recording(noise_dir)
+    speaker_mc, noise_mc = validation_common.align_recordings(speaker_recording, noise_recording)
+    channel_map = validation_common.active_channel_map_for_recording(speaker_recording)
+    mix_mc = validation_common.mix_speaker_and_noise(speaker_mc, noise_mc, channel_map=channel_map)
+    clean_ref_mono = validation_common.reference_mono_from_speaker(speaker_mc, channel_map=channel_map)
+
+    result = validation_common.evaluate_mode(
+        mix_mc=mix_mc,
+        clean_ref_mono=clean_ref_mono,
+        speaker_recording=speaker_recording,
+        mode="amplification",
+        suppression_enabled=False,
+        suppression_doa_deg=None,
+        processing_mode="passthrough",
+        output_rms_match_input=True,
+    )
+
+    raw_mono = validation_common.degraded_raw_mono_from_mix(mix_mc, channel_map=channel_map)
+    raw_rms = float(np.sqrt(np.mean(raw_mono**2)))
+    proc_rms = float(np.sqrt(np.mean(np.asarray(result["processed_audio"], dtype=np.float32) ** 2)))
+    assert abs(proc_rms - raw_rms) < 1e-6
+    assert result["output_rms_match_input"] is True
 
 
 def test_evaluate_mode_callback_uses_live_callback(monkeypatch, tmp_path: Path) -> None:

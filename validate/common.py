@@ -215,9 +215,10 @@ def mix_speaker_and_noise(
     noise_mc: np.ndarray,
     *,
     channel_map: tuple[int, ...],
+    noise_scale: float = 1.0,
 ) -> np.ndarray:
     matched_noise = rms_match_noise_to_speaker(speaker_mc, noise_mc, channel_map=channel_map)
-    return np.asarray(0.5 * (speaker_mc + matched_noise), dtype=np.float32)
+    return np.asarray(0.5 * (speaker_mc + (float(noise_scale) * matched_noise)), dtype=np.float32)
 
 
 def reference_mono_from_speaker(speaker_mc: np.ndarray, *, channel_map: tuple[int, ...]) -> np.ndarray:
@@ -228,6 +229,25 @@ def reference_mono_from_speaker(speaker_mc: np.ndarray, *, channel_map: tuple[in
 def degraded_raw_mono_from_mix(mix_mc: np.ndarray, *, channel_map: tuple[int, ...]) -> np.ndarray:
     active = _select_active_channels(mix_mc, channel_map)
     return np.mean(active, axis=1).astype(np.float32, copy=False)
+
+
+def rms_match_signal_to_reference(
+    signal: np.ndarray,
+    reference: np.ndarray,
+    *,
+    eps: float = 1e-8,
+) -> np.ndarray:
+    sig = np.asarray(signal, dtype=np.float32).reshape(-1)
+    ref = np.asarray(reference, dtype=np.float32).reshape(-1)
+    sample_count = min(sig.shape[0], ref.shape[0])
+    sig = sig[:sample_count]
+    ref = ref[:sample_count]
+    sig_rms = float(np.sqrt(np.mean(np.asarray(sig, dtype=np.float64) ** 2) + eps))
+    ref_rms = float(np.sqrt(np.mean(np.asarray(ref, dtype=np.float64) ** 2) + eps))
+    if sig_rms <= eps:
+        return np.zeros_like(signal, dtype=np.float32)
+    gain = ref_rms / sig_rms
+    return np.asarray(np.asarray(signal, dtype=np.float32) * gain, dtype=np.float32)
 
 
 def save_wav(path: Path, audio: np.ndarray, *, sample_rate_hz: int) -> None:
@@ -476,6 +496,7 @@ def evaluate_mode(
     suppression_enabled: bool,
     suppression_doa_deg: float | None,
     processing_mode: str = "callback",
+    output_rms_match_input: bool = False,
 ) -> dict[str, Any]:
     channel_map = active_channel_map_for_recording(speaker_recording)
     raw_mono = degraded_raw_mono_from_mix(mix_mc, channel_map=channel_map)
@@ -502,10 +523,13 @@ def evaluate_mode(
         )
     else:
         raise ValueError(f"unknown processing_mode: {processing_mode}")
+    if bool(output_rms_match_input):
+        processed = rms_match_signal_to_reference(processed, raw_mono)
     metrics = compute_metrics(clean_ref_mono, raw_mono, processed, sample_rate_hz=_INPUT_SAMPLE_RATE_HZ)
     return {
         "mode": str(mode),
         "processing_mode": str(processing_mode),
+        "output_rms_match_input": bool(output_rms_match_input),
         "processed_audio": np.asarray(processed, dtype=np.float32),
         "raw_mono": np.asarray(raw_mono, dtype=np.float32),
         "metrics": metrics,
@@ -534,6 +558,7 @@ def save_mode_outputs(
         "identifier": str(identifier),
         "mode": str(result["mode"]),
         "processing_mode": str(result.get("processing_mode", "local")),
+        "output_rms_match_input": bool(result.get("output_rms_match_input", False)),
         "speaker_recording_id": str(speaker_recording.recording_id),
         "noise_recording_id": str(noise_recording.recording_id),
         "speaker_direction_deg": float(recording_direction_deg(speaker_recording)),

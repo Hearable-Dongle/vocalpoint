@@ -54,6 +54,17 @@ def main() -> None:
         default="callback",
         help="Validation processing path. Default: callback.",
     )
+    parser.add_argument(
+        "--noise-scale",
+        type=float,
+        default=1.0,
+        help="Multiplier applied to RMS-matched noise before averaging with the speaker signal. Default: 1.0.",
+    )
+    parser.add_argument(
+        "--output-rms-match-input",
+        action="store_true",
+        help="Scale processed mono output so its RMS matches the raw input mono before metrics/output save.",
+    )
     parser.add_argument("--white-noise-seed", type=int, default=0, help="Random seed for white-noise generation.")
     args = parser.parse_args()
 
@@ -68,7 +79,7 @@ def main() -> None:
         noise_mc = generate_white_noise_like(speaker_mc, seed=int(args.white_noise_seed))
         noise_recording = speaker_recording
     channel_map = active_channel_map_for_recording(speaker_recording)
-    mix_mc = mix_speaker_and_noise(speaker_mc, noise_mc, channel_map=channel_map)
+    mix_mc = mix_speaker_and_noise(speaker_mc, noise_mc, channel_map=channel_map, noise_scale=float(args.noise_scale))
     clean_ref_mono = reference_mono_from_speaker(
         speaker_mc,
         channel_map=channel_map,
@@ -83,6 +94,7 @@ def main() -> None:
         suppression_enabled=False,
         suppression_doa_deg=None,
         processing_mode=str(args.processing_mode),
+        output_rms_match_input=bool(args.output_rms_match_input),
     )
     suppression = evaluate_mode(
         mix_mc=mix_mc,
@@ -92,6 +104,7 @@ def main() -> None:
         suppression_enabled=True,
         suppression_doa_deg=recording_direction_deg(speaker_recording),
         processing_mode=str(args.processing_mode),
+        output_rms_match_input=bool(args.output_rms_match_input),
     )
 
     amp_dir = save_mode_outputs(
@@ -122,7 +135,9 @@ def main() -> None:
                 "amplification_output_dir": str(amp_dir),
                 "own_voice_suppression_output_dir": str(suppression_dir),
                 "noise_mode": str(args.noise_mode),
+                "noise_scale": float(args.noise_scale),
                 "processing_mode": str(args.processing_mode),
+                "output_rms_match_input": bool(args.output_rms_match_input),
                 "amplification_metrics": amplification["metrics"],
                 "own_voice_suppression_metrics": suppression["metrics"],
             },
